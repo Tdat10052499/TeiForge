@@ -137,3 +137,8 @@ Thumbs.db
 .env.local
 output/
 results/
+.ruff_cache/
+# Example and CLI output
+results.txt
+demo.txt
+chat.json

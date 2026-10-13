@@ -3,66 +3,99 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agentforge"
-version = "0.2.0"
-description = "Open-source toolkit for building AI agents with tools, memory, and workflow automation"
+name = "teiforge"
+dynamic = ["version"]
+description = "Lightweight toolkit for building AI agents with tools, memory and workflows"
 readme = "README.md"
-requires-python = ">=3.9"
-authors = [
-    { name = "AgentForge Contributors" }
-]
-maintainers = [
-    { name = "Tdat10052499" }
-]
+requires-python = ">=3.10"
+authors = [{ name = "Tdat10052499" }]
+maintainers = [{ name = "Tdat10052499" }]
 license = { text = "MIT" }
-keywords = ["ai", "agents", "tools", "automation", "workflow", "llm"]
+keywords = ["ai", "agents", "llm", "tools", "function-calling", "automation", "workflow"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
 ]
 dependencies = [
     "requests>=2.31.0",
+    "tomli>=2.0; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]
-llm = [
-    "openai>=1.0.0",
-]
+openai = ["openai>=1.0.0"]
+anthropic = ["anthropic>=0.40.0"]
+llm = ["openai>=1.0.0", "anthropic>=0.40.0"]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
-    "black>=23.0",
-    "ruff>=0.1",
-    "mypy>=1.0",
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "build>=1.0",
 ]
 
+[project.scripts]
+teiforge = "teiforge.cli:main"
+
 [project.urls]
-Homepage = "https://github.com/Tdat10052499/agentforge"
-Documentation = "https://github.com/Tdat10052499/agentforge#readme"
-Repository = "https://github.com/Tdat10052499/agentforge.git"
-Issues = "https://github.com/Tdat10052499/agentforge/issues"
+Homepage = "https://github.com/Tdat10052499/teiforge"
+Documentation = "https://github.com/Tdat10052499/teiforge#readme"
+Repository = "https://github.com/Tdat10052499/teiforge.git"
+Issues = "https://github.com/Tdat10052499/teiforge/issues"
+Changelog = "https://github.com/Tdat10052499/teiforge/blob/main/CHANGELOG.md"
 
 [tool.setuptools]
-packages = ["agentforge"]
+packages = ["teiforge"]
 
-[tool.black]
-line-length = 100
-target-version = ['py39']
+[tool.setuptools.dynamic]
+version = { attr = "teiforge._version.__version__" }
+
+[tool.setuptools.package-data]
+teiforge = ["py.typed"]
 
 [tool.ruff]
-line-length = 100
-target-version = "py39"
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "BLE"]
+ignore = ["UP006", "UP007", "UP035", "UP045"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
+warn_unused_ignores = true
+check_untyped_defs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
 disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.coverage.run]
+source = ["teiforge"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:"]

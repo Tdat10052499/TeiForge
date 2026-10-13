@@ -2,62 +2,81 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
-    name: Tests (Python ${{ matrix.python-version }})
+  lint:
+    name: Lint and type-check
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -e ".[dev]"
+      - name: Ruff lint
+        run: ruff check teiforge tests examples
+      - name: Ruff format
+        run: ruff format --check teiforge tests examples
+      - name: Mypy
+        run: mypy teiforge
+
+  test:
+    name: Tests (Python ${{ matrix.python-version }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
-
+        os: [ubuntu-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        include:
+          - os: windows-latest
+            python-version: "3.12"
+          - os: macos-latest
+            python-version: "3.12"
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-
-      - name: Install project and development dependencies
-        run: python -m pip install -e ".[dev]"
-
-      - name: Check Python errors
-        run: ruff check --select F agentforge tests
-
-      - name: Run tests
-        run: python -m pytest
+      - run: python -m pip install -e ".[dev]"
+      - name: Run tests with coverage
+        run: python -m pytest --cov=teiforge --cov-report=term-missing --cov-fail-under=85
 
   build:
     name: Build and install package
     runs-on: ubuntu-latest
-
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-
-      - name: Install build frontend
-        run: python -m pip install build
-
+      - run: python -m pip install build
       - name: Build source and wheel distributions
         run: python -m build
-
-      - name: Install built wheel
-        run: python -m pip install --no-deps dist/*.whl
-
-      - name: Smoke-test installed package
-        run: python -c "import agentforge; assert agentforge.__version__ == '0.2.0'"
+      - name: Install the wheel in a clean environment
+        run: |
+          python -m venv /tmp/smoke
+          /tmp/smoke/bin/pip install dist/*.whl
+      - name: Smoke-test the installed package
+        working-directory: /tmp
+        run: |
+          /tmp/smoke/bin/python -c "import importlib.metadata as m, teiforge; assert m.version('teiforge') == teiforge.__version__"
+          /tmp/smoke/bin/teiforge version
+          /tmp/smoke/bin/teiforge tools
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
