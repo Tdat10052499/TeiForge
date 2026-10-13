@@ -2,7 +2,13 @@
 
 from unittest.mock import Mock
 
-from agentforge.tools import FileReaderTool, FileWriterTool, Tool, WebSearchTool
+from agentforge.tools import (
+    CommandRunnerTool,
+    FileReaderTool,
+    FileWriterTool,
+    Tool,
+    WebSearchTool,
+)
 
 
 def test_tool_creation():
@@ -98,3 +104,45 @@ def test_tool_error_handling():
     result = tool.run("x")
     assert "Tool error" in result
     assert "ValueError" in result
+
+
+def test_command_runner_is_disabled_by_default(monkeypatch):
+    monkeypatch.delenv("AGENTFORGE_ENABLE_COMMANDS", raising=False)
+
+    result = CommandRunnerTool.run("echo hello")
+
+    assert "disabled" in result
+    assert "hello" not in result
+
+
+def test_command_runner_treats_shell_operators_as_plain_echo_text(monkeypatch):
+    monkeypatch.setenv("AGENTFORGE_ENABLE_COMMANDS", "1")
+
+    result = CommandRunnerTool.run("run echo safe & whoami")
+
+    assert result == "Command output:\nsafe & whoami"
+
+
+def test_command_runner_rejects_arbitrary_python_execution(monkeypatch):
+    monkeypatch.setenv("AGENTFORGE_ENABLE_COMMANDS", "1")
+
+    result = CommandRunnerTool.run('python -c "print(1)"')
+
+    assert "restricted to --version or -V" in result
+
+
+def test_command_runner_lists_a_single_directory_without_shell(monkeypatch, tmp_path):
+    monkeypatch.setenv("AGENTFORGE_ENABLE_COMMANDS", "1")
+    (tmp_path / "example.txt").write_text("example", encoding="utf-8")
+
+    result = CommandRunnerTool.run(f'ls "{tmp_path}"')
+
+    assert result == "Command output:\nexample.txt"
+
+
+def test_command_runner_rejects_extra_ls_arguments(monkeypatch):
+    monkeypatch.setenv("AGENTFORGE_ENABLE_COMMANDS", "1")
+
+    result = CommandRunnerTool.run("ls . & whoami")
+
+    assert result == "Usage: ls [path]"

@@ -1,53 +1,37 @@
-"""Tests for the memory module."""
+# Contributing to AgentForge
 
-from agentforge.memory import Memory
+Thank you for your interest in contributing.
 
+## Reporting bugs and suggesting features
 
-def test_memory_creation():
-    memory = Memory()
-    assert len(memory) == 0
+Before opening an issue, check the existing [issues](https://github.com/Tdat10052499/agentforge/issues) and [discussions](https://github.com/Tdat10052499/agentforge/discussions). Include a clear description, steps to reproduce or use cases, expected and actual behavior, and your Python version and operating system where relevant.
 
+## Development setup
 
-def test_memory_add_and_get():
-    memory = Memory()
-    memory.add("Hello", role="user")
-    memory.add("Hi there", role="assistant")
-    entries = memory.get()
-    assert len(entries) == 2
-    assert entries[0].content == "Hello"
-    assert entries[1].content == "Hi there"
+```shell
+git clone https://github.com/Tdat10052499/agentforge.git
+cd agentforge
+python -m venv .venv
+```
 
+Activate the virtual environment (`.venv\Scripts\Activate.ps1` in PowerShell on Windows, or `source .venv/bin/activate` on macOS/Linux), then install the development dependencies:
 
-def test_memory_context():
-    memory = Memory()
-    memory.add("Hello", role="user")
-    memory.add("Hi there", role="assistant")
-    context = memory.get_context()
-    assert "User" in context
-    assert "Assistant" in context
+```shell
+python -m pip install -e ".[dev]"
+```
 
+Run the tests:
 
-def test_memory_clear():
-    memory = Memory()
-    memory.add("Hello")
-    memory.clear()
-    assert len(memory) == 0
+```shell
+python -m pytest
+```
 
+## Pull requests
 
-def test_memory_max_limit():
-    memory = Memory(max_entries=2)
-    memory.add("one")
-    memory.add("two")
-    memory.add("three")
-    assert len(memory) == 2
-    assert memory.get()[-1].content == "three"
+1. Create a focused feature branch.
+2. Add or update tests for behavior changes.
+3. Run the test suite and relevant formatting or lint checks.
+4. Update user-facing documentation and `CHANGELOG.md` as needed.
+5. Open a pull request describing the change and linking any related issue.
 
-
-def test_memory_str():
-    memory = Memory()
-    memory.add("hello")
-    assert "Memory" in str(memory)
-
-
-__all__ = ["Memory"]
-
+Follow the existing code style, use type hints where practical, and keep changes focused. Be respectful and constructive in project discussions.

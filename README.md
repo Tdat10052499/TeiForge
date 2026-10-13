@@ -1,147 +1,101 @@
-"""Core agent implementation."""
+# AgentForge
 
-import os
-from typing import Dict, Optional
+AgentForge is a lightweight Python toolkit for building agents with tools, short-term memory, web search, and simple workflows. It includes a Python API and a command-line interface.
 
-from .memory import Memory
-from .tools import Tool
+## Features
 
-try:
-    from openai import OpenAI
-except Exception:
-    OpenAI = None
+- Register custom tools with a small, typed interface.
+- Search the web with DuckDuckGo.
+- Optionally summarize search results with OpenAI.
+- Read and write local files.
+- Keep a bounded in-memory conversation history.
+- Run predefined workflows from Python or the CLI.
 
+AgentForge is an early-stage project. Its agent currently routes tasks using keywords; it does not provide autonomous planning or general-purpose model-driven tool calling.
 
-class Agent:
-    """An AI agent that can use tools and maintain memory."""
+## Installation
 
-    def __init__(self, name: str, model: str = "gpt-4o-mini"):
-        self.name = name
-        self.model = model or os.getenv("AGENTFORGE_MODEL", "gpt-4o-mini")
-        self.tools: Dict[str, Tool] = {}
-        self.memory = Memory()
-        self.task_count = 0
+```shell
+python -m venv .venv
+```
 
-    def add_tool(self, tool: Tool) -> None:
-        self.tools[tool.name] = tool
+Activate the environment (`.venv\Scripts\Activate.ps1` in PowerShell on Windows, or `source .venv/bin/activate` on macOS/Linux), then install:
 
-    def remove_tool(self, tool_name: str) -> bool:
-        if tool_name in self.tools:
-            del self.tools[tool_name]
-            return True
-        return False
+```shell
+python -m pip install -e .
+```
 
-    def get_tools_description(self) -> str:
-        if not self.tools:
-            return "No tools available."
+For development tools and tests:
 
-        lines = ["Available tools:"]
-        for tool_name, tool in self.tools.items():
-            lines.append(f"  - {tool_name}: {tool.description}")
-        return "\n".join(lines)
+```shell
+python -m pip install -e ".[dev]"
+```
 
-    def run(self, user_input: str) -> str:
-        self.task_count += 1
-        self.memory.add(user_input, role="user")
-        response = self._think_and_execute(user_input)
-        self.memory.add(response, role="assistant")
-        return response
+To enable OpenAI-powered summaries, install the optional client and set an API key:
 
-    def _call_llm(self, messages: list) -> Optional[str]:
-        """Call OpenAI if available and configured."""
-        if OpenAI is None:
-            return None
+```shell
+python -m pip install openai
+```
 
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            return None
+Set `OPENAI_API_KEY` in your environment. `AGENTFORGE_MODEL` optionally selects the model and defaults to `gpt-4o-mini`. If OpenAI is unavailable or no key is configured, search results are returned without an LLM summary.
 
-        try:
-            client = OpenAI(api_key=api_key)
-            completion = client.chat.completions.create(
-                model=self.model,
-                temperature=0.3,
-                messages=messages,
-            )
-            return completion.choices[0].message.content
-        except Exception:
-            return None
+## Quick start
 
-    def _summarize_text(self, text: str, max_bullets: int = 5) -> Optional[str]:
-        """Ask the LLM to summarize the text into a short response."""
-        if not text or not text.strip():
-            return None
+```python
+from agentforge import Agent, WebSearchTool
 
-        prompt_messages = [
-            {
-                "role": "system",
-                "content": "You are a concise assistant that summarizes the content of web search results.",
-            },
-            {
-                "role": "user",
-                "content": (
-                    "Summarize the following content into a short 1-line summary and then up to "
-                    f"{max_bullets} bullet points. Keep it concise and include any source URLs if present.\n\n"
-                    "Content:\n" + text
-                ),
-            },
-        ]
-        return self._call_llm(prompt_messages)
+agent = Agent(name="research-agent")
+agent.add_tool(WebSearchTool)
+print(agent.run("Search for open-source Python agent frameworks"))
+```
 
-    def _think_and_execute(self, user_input: str) -> str:
-        lowered = user_input.lower()
+See the [`examples/`](examples/) directory for research, file, and workflow examples.
 
-        if any(keyword in lowered for keyword in ["search", "find", "lookup", "latest", "news", "research"]):
-            if "web_search" in self.tools:
-                raw = self.tools["web_search"].run(user_input)
-                summary = self._summarize_text(raw)
-                if summary:
-                    return self._format_response("web_search", f"{summary}\n\nFull results:\n{raw}")
-                return self._format_response("web_search", raw)
+## CLI
 
-        if any(keyword in lowered for keyword in ["read", "open", "file", "load", "summarize"]):
-            if "file_reader" in self.tools:
-                payload = user_input if "read:" in user_input else f"read:{user_input}"
-                return self._format_response("file_reader", self.tools["file_reader"].run(payload))
+```shell
+python -m agentforge.cli --agent research --task "Search for open-source Python agent frameworks"
+python -m agentforge.cli --agent research --task "Search for agent frameworks" --out results.txt --no-llm
+python -m agentforge.cli --agent file-analyzer --task "read:demo.txt"
+python -m agentforge.cli --agent workflow --task "Search for AI agent libraries" --verbose
+```
 
-        if any(keyword in lowered for keyword in ["write", "save", "create", "store"]):
-            if "file_writer" in self.tools:
-                payload = user_input if "write:" in user_input else f"write:{user_input}"
-                return self._format_response("file_writer", self.tools["file_writer"].run(payload))
+The `--out` option saves raw search results and, when available, an LLM summary. `--no-llm` disables summarization for that run.
 
-        if any(keyword in lowered for keyword in ["run", "execute", "command", "bash", "shell"]):
-            if "command_runner" in self.tools:
-                return self._format_response("command_runner", self.tools["command_runner"].run(user_input))
+## Built-in tools
 
-        return self._default_response(user_input)
+`WebSearchTool`, `FileReaderTool`, and `FileWriterTool` are exported from the `agentforge` package. `CommandRunnerTool` is also available, but is disabled unless `AGENTFORGE_ENABLE_COMMANDS=1` is set.
 
-    def _format_response(self, tool_name: str, tool_output: str) -> str:
-        return f"[Using {tool_name}]\n\n{tool_output}"
+When enabled, the command runner supports only `echo`, `pwd`, `ls [path]`, and `python`/`python3 --version` (or `-V`). It does not invoke a shell, execute arbitrary programs, or accept arbitrary Python code. Keep it disabled unless the restricted commands are needed.
 
-    def _default_response(self, user_input: str) -> str:
-        return (
-            f"Agent '{self.name}' received task: \"{user_input}\"\n\n"
-            "I don't have a direct tool for this task yet.\n\n"
-            f"{self.get_tools_description()}\n\n"
-            "Try using keywords like 'search', 'read', 'write', or 'run'."
-        )
+```python
+from agentforge import Agent, CommandRunnerTool
 
-    def get_memory_summary(self) -> str:
-        return (
-            "Agent Memory Summary\n"
-            "==================\n"
-            f"Agent: {self.name}\n"
-            f"Model: {self.model}\n"
-            f"Tasks completed: {self.task_count}\n"
-            f"Memory entries: {len(self.memory)}\n"
-            f"Tools available: {len(self.tools)}\n"
-        )
+agent = Agent(name="local-agent")
+agent.add_tool(CommandRunnerTool)
+print(agent.run("run pwd"))
+```
 
-    def __str__(self) -> str:
-        return f"Agent(name='{self.name}', model='{self.model}', tools={len(self.tools)})"
+## Configuration
 
-    def __repr__(self) -> str:
-        return self.__str__()
+The project includes [`.env.example`](.env.example) as a reference. AgentForge does not load `.env` files automatically; export the variables in your shell or load them with your preferred environment-variable manager.
 
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `OPENAI_API_KEY` | Enables OpenAI summaries when the `openai` package is installed. | Unset |
+| `AGENTFORGE_MODEL` | OpenAI model used for summaries. | `gpt-4o-mini` |
+| `AGENTFORGE_ENABLE_COMMANDS` | Enables the restricted command runner. | `0` |
 
-__all__ = ["Agent"]
+## Development
+
+Run the test suite with:
+
+```shell
+python -m pytest
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development and contribution guidelines. Changes are recorded in [CHANGELOG.md](CHANGELOG.md).
+
+## License
+
+AgentForge is distributed under the MIT License. See [LICENSE](LICENSE).

@@ -2,7 +2,8 @@
 
 import os
 import re
-import subprocess
+import shlex
+import sys
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import Callable
@@ -204,34 +205,55 @@ def file_writer_func(query: str) -> str:
 
 
 def command_runner_func(query: str) -> str:
-    """Run a secure, restricted system command."""
+    """Run one of the explicitly supported, non-shell commands."""
     if os.getenv("AGENTFORGE_ENABLE_COMMANDS", "0") != "1":
         return (
             "Command execution is disabled in this version. "
             "Set AGENTFORGE_ENABLE_COMMANDS=1 to allow it in a controlled environment."
         )
 
-    allowed = ["echo", "python", "python3", "ls", "pwd"]
     command = query.strip()
     if not command:
         return "No command was provided."
 
-    executable = command.split()[0]
-    if executable not in allowed:
-        return f"Command '{executable}' is not allowed by the whitelist."
+    command = re.sub(r"^(?:run|execute)\s+", "", command, count=1, flags=re.IGNORECASE)
+    parts = command.split(maxsplit=1)
+    executable = parts[0]
+    arguments = parts[1] if len(parts) == 2 else ""
 
-    try:
-        result = subprocess.run(
-            command,
-            shell=True,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        output = result.stdout.strip() or result.stderr.strip() or "Command returned no output."
+    if executable == "echo":
+        output = arguments.strip() or "Command returned no output."
         return f"Command output:\n{output}"
-    except Exception as exc:  # pragma: no cover - defensive branch
-        return f"Command execution failed: {type(exc).__name__}: {exc}"
+
+    if executable == "pwd":
+        if arguments:
+            return "Usage: pwd"
+        return f"Command output:\n{os.getcwd()}"
+
+    if executable == "ls":
+        try:
+            parsed_arguments = shlex.split(arguments, posix=os.name != "nt")
+        except ValueError as exc:
+            return f"Invalid ls arguments: {exc}"
+        if len(parsed_arguments) > 1:
+            return "Usage: ls [path]"
+
+        path = parsed_arguments[0] if parsed_arguments else "."
+        if os.name == "nt" and len(path) >= 2 and path[0] == path[-1] and path[0] in "\"'":
+            path = path[1:-1]
+        try:
+            entries = sorted(os.listdir(path))
+        except OSError as exc:
+            return f"Command execution failed: {type(exc).__name__}: {exc}"
+        output = "\n".join(entries) or "Command returned no output."
+        return f"Command output:\n{output}"
+
+    if executable in {"python", "python3"}:
+        if arguments not in {"--version", "-V"}:
+            return f"Command '{executable}' is restricted to --version or -V."
+        return f"Command output:\n{sys.version.split()[0]}"
+
+    return f"Command '{executable}' is not allowed by the whitelist."
 
 
 WebSearchTool = Tool(
