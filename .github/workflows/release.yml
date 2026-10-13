@@ -3,7 +3,7 @@
 # One-time setup on PyPI (no API token needed):
 #   pypi.org -> Your account -> Publishing -> Add a new pending publisher
 #     PyPI project name: teiforge
-#     Owner: Tdat10052499   Repository: teiforge
+#     Owner: Tdat10052499   Repository name: TeiForge (exactly as shown on GitHub)
 #     Workflow name: release.yml   Environment: pypi
 # Then create the "pypi" environment under GitHub Settings -> Environments.
 

@@ -18,7 +18,7 @@ from .tools import (
 )
 from .workspace import Workspace, WorkspaceError
 
-__author__ = "Tdat10052499"
+__author__ = "Hồ Du Tuấn Đạt (Teichi)"
 __license__ = "MIT"
 
 __all__ = [

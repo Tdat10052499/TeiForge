@@ -8,8 +8,8 @@ dynamic = ["version"]
 description = "Lightweight toolkit for building AI agents with tools, memory and workflows"
 readme = "README.md"
 requires-python = ">=3.10"
-authors = [{ name = "Tdat10052499" }]
-maintainers = [{ name = "Tdat10052499" }]
+authors = [{ name = "Hồ Du Tuấn Đạt (Teichi)" }]
+maintainers = [{ name = "Hồ Du Tuấn Đạt (Teichi)" }]
 license = { text = "MIT" }
 keywords = ["ai", "agents", "llm", "tools", "function-calling", "automation", "workflow"]
 classifiers = [

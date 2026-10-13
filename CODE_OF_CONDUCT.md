@@ -9,6 +9,7 @@ project space.
 
 ## Reporting
 
-If you experience or witness unacceptable behaviour, contact the maintainer
-([@Tdat10052499](https://github.com/Tdat10052499)) privately. Reports are handled confidentially. The maintainer may remove
-comments, close threads, or block participants who break this code of conduct.
+If you experience or witness unacceptable behaviour, contact the maintainer, Teichi
+([@Tdat10052499](https://github.com/Tdat10052499)), privately. Reports are handled
+confidentially. The maintainer may remove comments, close threads, or block participants who
+break this code of conduct.
