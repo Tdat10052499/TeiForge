@@ -1,7 +1,6 @@
 """Tests for the memory module."""
 
-import pytest
-from agentforge.memory import Memory, MemoryEntry
+from agentforge.memory import Memory
 
 
 def test_memory_creation():

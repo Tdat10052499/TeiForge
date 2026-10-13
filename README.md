@@ -11,7 +11,9 @@ AgentForge is a lightweight Python toolkit for building agents with tools, short
 - Keep a bounded in-memory conversation history.
 - Run predefined workflows from Python or the CLI.
 
-AgentForge is an early-stage project. Its agent currently routes tasks using keywords; it does not provide autonomous planning or general-purpose model-driven tool calling.
+## Project scope
+
+AgentForge is an early-stage project. Its agent routes tasks using keywords; it does not provide autonomous planning or general-purpose model-driven tool calling. Near term, the project will prioritize a stable API, reliable built-in tools, integrations, and clear documentation while keeping this lightweight routing approach.
 
 ## Installation
 
