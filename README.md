@@ -12,7 +12,7 @@ the conversation. It works in two modes:
 - **Router mode**: with no model configured, a deterministic keyword router picks the tool,
   so the toolkit is still useful offline and in tests.
 
-*"Tei" is the author's name; TeiForge is not related to Hugging Face Text Embeddings Inference (TEI).*
+*"Tei" comes from Teichi, the author's nickname (Hồ Du Tuấn Đạt). TeiForge is not related to Hugging Face Text Embeddings Inference (TEI).*
 
 ## Features
 
