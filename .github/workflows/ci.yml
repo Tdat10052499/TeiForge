@@ -76,7 +76,7 @@ jobs:
           /tmp/smoke/bin/python -c "import importlib.metadata as m, teiforge; assert m.version('teiforge') == teiforge.__version__"
           /tmp/smoke/bin/teiforge version
           /tmp/smoke/bin/teiforge tools
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
