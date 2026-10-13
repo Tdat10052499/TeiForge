@@ -1,166 +1,147 @@
-# AgentForge
+"""Core agent implementation."""
 
-A polished open-source toolkit for building AI agents with tools, memory, and workflow automation.
+import os
+from typing import Dict, Optional
 
-## Why AgentForge?
+from .memory import Memory
+from .tools import Tool
 
-Most AI demos stop at simple chat. AgentForge gives developers the building blocks to create real agents that can:
-
-- Search the web
-- Read and write files
-- Use memory across tasks
-- Run workflows
-- Call custom tools
-- Run locally or with LLM APIs
-
-This is designed for people who want to prototype agentic apps quickly without heavy boilerplate.
-
-## Project pitch
-
-AgentForge is an open-source framework for building AI agents that can think, call tools, remember context, and complete multi-step tasks.
-
-## Features
-
-- Lightweight agent core
-- Tool registry system
-- Short-term memory
-- Web search tool with live API support
-- File read/write tools
-- Command execution with safeguards
-- Python-first API
-- CLI for quick demos
-- Extensible architecture for plugins and new tools
-
-## Installation
-
-```bash
-git clone https://github.com/Tdat10052499/agentforge.git
-cd agentforge
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .
-```
-
-## Required environment variables
-
-Create a `.env` file or export variables in your shell:
-
-```bash
-export OPENAI_API_KEY=your-key-here
-export AGENTFORGE_MODEL=gpt-4o-mini
-export AGENTFORGE_ENABLE_COMMANDS=0
-export AGENTFORGE_USE_REAL_SEARCH=1
-```
-
-Copy the example file:
-
-```bash
-cp .env.example .env
-```
-
-## Quick start
-
-```python
-from agentforge import Agent, Tool
+try:
+    from openai import OpenAI
+except Exception:
+    OpenAI = None
 
 
-def web_search(query: str) -> str:
-    return f"Search results for: {query}"
+class Agent:
+    """An AI agent that can use tools and maintain memory."""
 
-agent = Agent(name="research-agent")
-agent.add_tool(
-    Tool(
-        name="web_search",
-        description="Search the web for information",
-        func=web_search,
-    )
-)
+    def __init__(self, name: str, model: str = "gpt-4o-mini"):
+        self.name = name
+        self.model = model or os.getenv("AGENTFORGE_MODEL", "gpt-4o-mini")
+        self.tools: Dict[str, Tool] = {}
+        self.memory = Memory()
+        self.task_count = 0
 
-result = agent.run("Find the latest AI agent frameworks and summarize them.")
-print(result)
-```
+    def add_tool(self, tool: Tool) -> None:
+        self.tools[tool.name] = tool
 
-## CLI usage
+    def remove_tool(self, tool_name: str) -> bool:
+        if tool_name in self.tools:
+            del self.tools[tool_name]
+            return True
+        return False
 
-```bash
-python -m agentforge.cli --agent research --task "What are the latest AI agent frameworks?"
-python -m agentforge.cli --agent file-analyzer --task "read:README.md"
-python -m agentforge.cli --agent workflow --task "Search for AI agent libraries and summarize the best options"
-```
+    def get_tools_description(self) -> str:
+        if not self.tools:
+            return "No tools available."
 
-## Example agents
+        lines = ["Available tools:"]
+        for tool_name, tool in self.tools.items():
+            lines.append(f"  - {tool_name}: {tool.description}")
+        return "\n".join(lines)
 
-- Research agent: searches the web and summarizes results
-- File analysis agent: reads files and summarizes content
-- Workflow agent: chains several actions together
+    def run(self, user_input: str) -> str:
+        self.task_count += 1
+        self.memory.add(user_input, role="user")
+        response = self._think_and_execute(user_input)
+        self.memory.add(response, role="assistant")
+        return response
 
-Examples are included in the `examples/` folder.
+    def _call_llm(self, messages: list) -> Optional[str]:
+        """Call OpenAI if available and configured."""
+        if OpenAI is None:
+            return None
 
-## Architecture
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            return None
 
-```text
-agentforge/
-├── __init__.py
-├── agent.py
-├── config.py
-├── memory.py
-├── tools.py
-├── cli.py
-├── examples/
-├── tests/
-├── README.md
-├── pyproject.toml
-├── requirements.txt
-├── .env.example
-├── .gitignore
-├── CONTRIBUTING.md
-├── LICENSE
-├── CHANGELOG.md
-└── README.md
-```
+        try:
+            client = OpenAI(api_key=api_key)
+            completion = client.chat.completions.create(
+                model=self.model,
+                temperature=0.3,
+                messages=messages,
+            )
+            return completion.choices[0].message.content
+        except Exception:
+            return None
 
-## Roadmap
+    def _summarize_text(self, text: str, max_bullets: int = 5) -> Optional[str]:
+        """Ask the LLM to summarize the text into a short response."""
+        if not text or not text.strip():
+            return None
 
-### v0.1
-- Agent core
-- Memory
-- Tool registry
-- File tools
-- CLI
-- Documentation
+        prompt_messages = [
+            {
+                "role": "system",
+                "content": "You are a concise assistant that summarizes the content of web search results.",
+            },
+            {
+                "role": "user",
+                "content": (
+                    "Summarize the following content into a short 1-line summary and then up to "
+                    f"{max_bullets} bullet points. Keep it concise and include any source URLs if present.\n\n"
+                    "Content:\n" + text
+                ),
+            },
+        ]
+        return self._call_llm(prompt_messages)
 
-### v0.2
-- OpenAI / Anthropic integration
-- Real search support
-- Workflow engine
-- More built-in tools
+    def _think_and_execute(self, user_input: str) -> str:
+        lowered = user_input.lower()
 
-### v0.3
-- OLLAMA local model support
-- Browser tool input/output
-- Better memory handling
-- More examples and tutorials
+        if any(keyword in lowered for keyword in ["search", "find", "lookup", "latest", "news", "research"]):
+            if "web_search" in self.tools:
+                raw = self.tools["web_search"].run(user_input)
+                summary = self._summarize_text(raw)
+                if summary:
+                    return self._format_response("web_search", f"{summary}\n\nFull results:\n{raw}")
+                return self._format_response("web_search", raw)
 
-### v1.0
-- Dashboard or UI
-- Multi-agent collaboration
-- Production deployment guides
-- Better plugin ecosystem
+        if any(keyword in lowered for keyword in ["read", "open", "file", "load", "summarize"]):
+            if "file_reader" in self.tools:
+                payload = user_input if "read:" in user_input else f"read:{user_input}"
+                return self._format_response("file_reader", self.tools["file_reader"].run(payload))
 
-## Contributing
+        if any(keyword in lowered for keyword in ["write", "save", "create", "store"]):
+            if "file_writer" in self.tools:
+                payload = user_input if "write:" in user_input else f"write:{user_input}"
+                return self._format_response("file_writer", self.tools["file_writer"].run(payload))
 
-We welcome contributions.
+        if any(keyword in lowered for keyword in ["run", "execute", "command", "bash", "shell"]):
+            if "command_runner" in self.tools:
+                return self._format_response("command_runner", self.tools["command_runner"].run(user_input))
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and contribution guidelines.
+        return self._default_response(user_input)
 
-## License
+    def _format_response(self, tool_name: str, tool_output: str) -> str:
+        return f"[Using {tool_name}]\n\n{tool_output}"
 
-MIT License.
+    def _default_response(self, user_input: str) -> str:
+        return (
+            f"Agent '{self.name}' received task: \"{user_input}\"\n\n"
+            "I don't have a direct tool for this task yet.\n\n"
+            f"{self.get_tools_description()}\n\n"
+            "Try using keywords like 'search', 'read', 'write', or 'run'."
+        )
 
-## Star this project
+    def get_memory_summary(self) -> str:
+        return (
+            "Agent Memory Summary\n"
+            "==================\n"
+            f"Agent: {self.name}\n"
+            f"Model: {self.model}\n"
+            f"Tasks completed: {self.task_count}\n"
+            f"Memory entries: {len(self.memory)}\n"
+            f"Tools available: {len(self.tools)}\n"
+        )
 
-If you find AgentForge useful, give it a star and help it grow.
+    def __str__(self) -> str:
+        return f"Agent(name='{self.name}', model='{self.model}', tools={len(self.tools)})"
 
----
+    def __repr__(self) -> str:
+        return self.__str__()
 
-This project is still in early alpha, but the goal is to become a clean, practical tool that developers can use and discuss.
+
+__all__ = ["Agent"]
