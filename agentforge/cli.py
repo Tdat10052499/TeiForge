@@ -41,6 +41,8 @@ Examples:
     parser.add_argument("--agent", choices=["research", "file-analyzer", "workflow"], default="research")
     parser.add_argument("--task", required=True, help="Task for the agent to perform")
     parser.add_argument("--verbose", action="store_true", help="Print detailed metadata")
+    parser.add_argument("--out", type=str, default=None, help="Optional output file to save search+summary results")
+    parser.add_argument("--no-llm", action="store_true", help="Disable LLM summarization for this run")
     parsed_args = parser.parse_args(args)
 
     if parsed_args.agent == "research":
@@ -50,13 +52,23 @@ Examples:
     else:
         agent = create_workflow_agent()
 
+    # Optionally disable LLM summarization
+    if parsed_args.no_llm:
+        agent.enable_llm = False
+
     if parsed_args.verbose:
         print(f"Agent: {agent}")
         print(agent.get_tools_description())
         print()
 
-    print(f"Task: {parsed_args.task}\n")
-    print(agent.run(parsed_args.task))
+    # If an output file was provided, use run_search_and_save
+    if parsed_args.out:
+        print(f"Task: {parsed_args.task}\n")
+        result = agent.run_search_and_save(parsed_args.task, parsed_args.out)
+        print(result)
+    else:
+        print(f"Task: {parsed_args.task}\n")
+        print(agent.run(parsed_args.task))
 
     if parsed_args.verbose:
         print()
