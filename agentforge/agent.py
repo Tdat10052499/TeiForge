@@ -1,28 +1,54 @@
 """Core agent implementation."""
 
 import os
+import logging
 from typing import Dict, Optional
 
+from .config import AgentConfig
 from .memory import Memory
-from .tools import Tool
+from .tools import DEFAULT_TOOLS, Tool
+
+logger = logging.getLogger(__name__)
 
 try:
     from openai import OpenAI
-except Exception:
+except ImportError:
     OpenAI = None
 
 
 class Agent:
     """An AI agent that can use tools and maintain memory."""
 
-    def __init__(self, name: str, model: str = "gpt-4o-mini"):
-        self.name = name
-        self.model = model or os.getenv("AGENTFORGE_MODEL", "gpt-4o-mini")
+    def __init__(
+        self,
+        name: Optional[str] = None,
+        model: Optional[str] = None,
+        config: Optional[AgentConfig] = None,
+    ):
+        if config is not None and name is not None:
+            raise ValueError("Pass either name/model or config, not both.")
+        if config is None:
+            if name is None:
+                raise ValueError("Agent name or config must be provided.")
+            config = AgentConfig(
+                name=name,
+                model=model or os.getenv("AGENTFORGE_MODEL", "gpt-4o-mini"),
+            )
+        elif model is not None:
+            raise ValueError("Pass the model through config when using AgentConfig.")
+
+        self.config = config
+        self.name = config.name
+        self.model = config.model
         self.tools: Dict[str, Tool] = {}
-        self.memory = Memory()
+        self.memory = Memory(max_entries=config.memory_size)
         self.task_count = 0
-        # Controls whether the agent will call an LLM for summarization
         self.enable_llm: bool = True
+
+        for tool_name in config.tools:
+            if tool_name not in DEFAULT_TOOLS:
+                raise ValueError(f"Unknown built-in tool in AgentConfig: {tool_name}")
+            self.add_tool(DEFAULT_TOOLS[tool_name])
 
     def add_tool(self, tool: Tool) -> None:
         self.tools[tool.name] = tool
@@ -43,11 +69,14 @@ class Agent:
         return "\n".join(lines)
 
     def run(self, user_input: str) -> str:
+        response = self._think_and_execute(user_input)
+        self._record_task(user_input, response)
+        return response
+
+    def _record_task(self, user_input: str, response: str) -> None:
         self.task_count += 1
         self.memory.add(user_input, role="user")
-        response = self._think_and_execute(user_input)
         self.memory.add(response, role="assistant")
-        return response
 
     def _call_llm(self, messages: list) -> Optional[str]:
         """Call OpenAI if available and configured."""
@@ -62,11 +91,13 @@ class Agent:
             client = OpenAI(api_key=api_key)
             completion = client.chat.completions.create(
                 model=self.model,
-                temperature=0.3,
+                temperature=self.config.temperature,
+                max_tokens=self.config.max_tokens,
                 messages=messages,
             )
             return completion.choices[0].message.content
         except Exception:
+            logger.exception("OpenAI summarization failed; continuing without a summary.")
             return None
 
     def _summarize_text(self, text: str, max_bullets: int = 5) -> Optional[str]:
@@ -83,7 +114,8 @@ class Agent:
         prompt_messages = [
             {
                 "role": "system",
-                "content": "You are a concise assistant that summarizes the content of web search results.",
+                "content": self.config.system_prompt
+                or "You are a concise assistant that summarizes the content of web search results.",
             },
             {
                 "role": "user",
@@ -99,44 +131,47 @@ class Agent:
     def run_search_and_save(self, query: str, out_path: str) -> str:
         """Run a web search, optionally summarize the result with the LLM, and save both summary and raw output to a file.
 
-        Returns a confirmation message or an error string.
+        Returns a confirmation message or an explicit error string.
         """
-        try:
-            if "web_search" not in self.tools:
-                return "No web_search tool is available for this task."
-
-            # Record user intent
-            self.memory.add(query, role="user")
-
-            # Run web search
+        if not query or not query.strip():
+            response = "Error: A search query is required."
+        elif not out_path or not out_path.strip():
+            response = "Error: An output file path is required."
+        elif "web_search" not in self.tools:
+            response = "Error: No web_search tool is available for this task."
+        else:
             raw_result = self.tools["web_search"].run(query)
-
-            # Try to summarize (may return None)
-            summary = self._summarize_text(raw_result)
-
-            # Build content to write
-            if summary:
-                content_to_write = (
-                    "Summary:\n"
-                    f"{summary}\n\n"
-                    "Original search result:\n"
-                    f"{raw_result}\n"
-                )
+            if not isinstance(raw_result, str):
+                response = "Error: Search returned an invalid result."
+            elif raw_result.startswith(("Tool error:", "Web search failed:")):
+                response = f"Error: Search failed: {raw_result}"
+            elif not raw_result.strip():
+                response = "Error: Search returned an empty result."
             else:
-                content_to_write = f"Original search result:\n{raw_result}\n"
+                summary = self._summarize_text(raw_result)
+                if summary and summary.strip():
+                    content_to_write = (
+                        "Summary:\n"
+                        f"{summary}\n\n"
+                        "Original search result:\n"
+                        f"{raw_result}\n"
+                    )
+                else:
+                    content_to_write = f"Original search result:\n{raw_result}\n"
 
-            # Write to file with UTF-8
-            with open(out_path, "w", encoding="utf-8") as fh:
-                fh.write(content_to_write)
+                try:
+                    with open(out_path, "w", encoding="utf-8") as file_handle:
+                        file_handle.write(content_to_write)
+                except OSError as exc:
+                    response = (
+                        f"Error: Failed to save search results to {out_path}: "
+                        f"{type(exc).__name__}: {exc}"
+                    )
+                else:
+                    response = f"Saved search results to {out_path}"
 
-            response = f"Saved search results to {out_path}"
-            self.memory.add(response, role="assistant")
-            return response
-
-        except Exception as exc:
-            error_message = f"Failed to run search and save: {type(exc).__name__}: {exc}"
-            self.memory.add(error_message, role="assistant")
-            return error_message
+        self._record_task(query, response)
+        return response
 
     def _think_and_execute(self, user_input: str) -> str:
         lowered = user_input.lower()
@@ -166,6 +201,22 @@ class Agent:
         return self._default_response(user_input)
 
     def _format_response(self, tool_name: str, tool_output: str) -> str:
+        error_prefixes = (
+            "Tool error:",
+            "Web search failed:",
+            "File not found:",
+            "Failed to read file:",
+            "Failed to write file:",
+            "Command execution failed:",
+            "Command execution is disabled",
+            "Command '",
+            "Usage:",
+            "No file path was provided.",
+            "No command was provided.",
+            "Invalid ls arguments:",
+        )
+        if tool_output.startswith(error_prefixes):
+            return f"Error: {tool_output}"
         return f"[Using {tool_name}]\n\n{tool_output}"
 
     def _default_response(self, user_input: str) -> str:
@@ -182,7 +233,7 @@ class Agent:
             "==================\n"
             f"Agent: {self.name}\n"
             f"Model: {self.model}\n"
-            f"Tasks completed: {self.task_count}\n"
+            f"Tasks run: {self.task_count}\n"
             f"Memory entries: {len(self.memory)}\n"
             f"Tools available: {len(self.tools)}\n"
         )

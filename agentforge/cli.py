@@ -66,9 +66,14 @@ Examples:
         print(f"Task: {parsed_args.task}\n")
         result = agent.run_search_and_save(parsed_args.task, parsed_args.out)
         print(result)
+        if result.startswith("Error:"):
+            return 1
     else:
         print(f"Task: {parsed_args.task}\n")
-        print(agent.run(parsed_args.task))
+        result = agent.run(parsed_args.task)
+        print(result)
+        if result.startswith("Error:"):
+            return 1
 
     if parsed_args.verbose:
         print()

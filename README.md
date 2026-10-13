@@ -31,10 +31,10 @@ For development tools and tests:
 python -m pip install -e ".[dev]"
 ```
 
-To enable OpenAI-powered summaries, install the optional client and set an API key:
+To enable OpenAI-powered summaries, install the optional dependency and set an API key:
 
 ```shell
-python -m pip install openai
+python -m pip install -e ".[llm]"
 ```
 
 Set `OPENAI_API_KEY` in your environment. `AGENTFORGE_MODEL` optionally selects the model and defaults to `gpt-4o-mini`. If OpenAI is unavailable or no key is configured, search results are returned without an LLM summary.
