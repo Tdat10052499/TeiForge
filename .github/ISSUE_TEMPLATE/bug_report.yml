@@ -1,0 +1,44 @@
+name: Bug report
+description: Something in TeiForge does not work as documented.
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: The smallest code or `teiforge` command that shows the problem.
+      render: python
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output or traceback
+      description: Remove API keys and personal paths before pasting.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: TeiForge version
+      placeholder: "output of `teiforge version`"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Python version and operating system
+      placeholder: "Python 3.12, Windows 11"
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: LLM provider
+      options: ["None (keyword router)", OpenAI, Anthropic, "OpenAI-compatible (Ollama, LM Studio, ...)", Other]

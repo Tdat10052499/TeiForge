@@ -1,24 +1,41 @@
 #!/usr/bin/env python3
-"""Workflow example."""
+"""Workflow agent: custom tools plus a live view of every step.
 
-from agentforge import Agent
-from agentforge.tools import DEFAULT_TOOLS
+Run: python examples/03_workflow_agent.py
+With OPENAI_API_KEY (or ANTHROPIC_API_KEY) set, the model chooses which tools to
+call; without one, the keyword router handles the tasks.
+"""
+
+from teiforge import Agent, AgentConfig, Event, tool
 
 
-def main():
-    agent = Agent(name="workflow-agent")
-    for tool in DEFAULT_TOOLS.values():
-        agent.add_tool(tool)
+@tool
+def word_count(text: str) -> str:
+    """Count the words in a piece of text.
 
-    tasks = [
-        "Search for AI agent frameworks",
-        "Read demo.txt if it exists",
-    ]
+    Args:
+        text: The text to count.
+    """
+    return f"{len(text.split())} words"
 
-    for task in tasks:
+
+def show(event: Event) -> None:
+    if event.type == "tool_call":
+        print(f"  -> {event.data['name']}({event.data['arguments']})")
+    elif event.type == "tool_result":
+        print(f"  <- {event.data['name']} {'ok' if event.data['ok'] else 'failed'}")
+
+
+def main() -> None:
+    agent = Agent(
+        config=AgentConfig(name="workflow-agent", tools=["web_search", "file_reader"], max_steps=5),
+        tools=[word_count],
+    )
+
+    for task in ["Search for AI agent libraries", "How many words are in 'agents use tools well'?"]:
         print(f"Task: {task}")
-        print("-" * 60)
-        print(agent.run(task))
+        result = agent.run_detailed(task, on_event=show)
+        print(result.output)
         print()
 
 

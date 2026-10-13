@@ -1,18 +1,28 @@
 #!/usr/bin/env python3
-"""File analysis agent example."""
+"""File agent: read and write files inside a sandboxed workspace.
 
-from agentforge import Agent, FileReaderTool, FileWriterTool
+Run: python examples/02_file_agent.py
+Everything happens in a temporary directory; paths outside it are refused.
+"""
+
+import tempfile
+
+from teiforge import Agent, AgentConfig
 
 
-def main():
-    agent = Agent(name="file-analyzer")
-    agent.add_tool(FileReaderTool)
-    agent.add_tool(FileWriterTool)
+def main() -> None:
+    with tempfile.TemporaryDirectory() as workspace:
+        config = AgentConfig(
+            name="file-agent",
+            tools=["file_reader", "file_writer"],
+            workspace=workspace,
+            mode="router",  # deterministic: no LLM needed
+        )
+        agent = Agent(config=config)
 
-    print("Creating demo file...")
-    agent.run("write:demo.txt:AgentForge is a tool for building AI agents.")
-    print("Reading the created file...")
-    print(agent.run("read:demo.txt"))
+        print(agent.run("write:demo.txt:TeiForge is a toolkit for building AI agents."))
+        print(agent.run("Read demo.txt if it exists"))
+        print(agent.run("read:../outside.txt"))  # refused: outside the workspace
 
 
 if __name__ == "__main__":
