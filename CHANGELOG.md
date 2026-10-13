@@ -49,6 +49,19 @@ already used on PyPI by an unrelated project. See "Upgrading from AgentForge 0.2
 - `write:C:\path\file.txt:content` wrote to a file named `C` on Windows.
 - File tools could read and write any path on the machine.
 - `search for` with nothing after it searched for the word "for".
+- The default system prompt told the model to cite web search results even when the agent had no
+  `web_search` tool, which led small models to claim they were searching. The prompt now lists only
+  the tools the agent has, says so when it has none, and asks the model to call tools through the
+  tool-calling interface rather than writing the call as text.
+
+### Known limitations
+
+- Provider adapters are tested with mocked clients. A live smoke test passed with Ollama
+  (`llama3.1` 8B) through `OpenAIProvider`; the OpenAI cloud API and `AnthropicProvider` have not
+  been tested against the live services yet.
+- Small local models sometimes write a tool call as plain JSON text instead of using tool calling.
+  TeiForge then returns that text as the final answer. Use a low `temperature` (for example `0`)
+  and a model with good tool-calling support.
 
 ### Removed
 

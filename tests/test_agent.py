@@ -375,3 +375,30 @@ def test_router_explicit_read_takes_the_path_from_a_sentence(tmp_path):
 @pytest.mark.parametrize("text", ["Summarize the notes for v0.3", "Show me the file, e.g. the main one"])
 def test_extract_path_ignores_versions_and_abbreviations(text):
     assert extract_path(text) is None
+
+
+def _system_prompt_sent(tmp_path, tools):
+    provider = ScriptedProvider(["done"])
+    agent = Agent(
+        config=AgentConfig(name="prompted", tools=tools, workspace=str(tmp_path)),
+        provider=provider,
+    )
+    agent.run("hi")
+    return provider.requests[0]["messages"][0]["content"]
+
+
+def test_default_system_prompt_mentions_web_search_only_when_available(tmp_path):
+    without_search = _system_prompt_sent(tmp_path, ["file_reader"])
+    assert "web search" not in without_search.lower()
+    assert "Available tools: file_reader." in without_search
+
+    with_search = _system_prompt_sent(tmp_path, ["web_search", "file_reader"])
+    assert "source links" in with_search
+    assert "Available tools: web_search, file_reader." in with_search
+
+
+def test_default_system_prompt_without_tools_says_so(tmp_path):
+    prompt = _system_prompt_sent(tmp_path, [])
+    assert "No tools are available" in prompt
+    assert "Use the available tools" not in prompt
+    assert prompt.startswith("You are prompted, an assistant built with TeiForge.")

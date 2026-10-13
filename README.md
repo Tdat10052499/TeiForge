@@ -102,6 +102,11 @@ local = OpenAIProvider("llama3.1", base_url="http://localhost:11434/v1")
 agent = Agent(name="local", provider=local)
 ```
 
+**Local models:** small models (around 8B parameters) sometimes write a tool call as plain JSON
+text instead of using tool calling, and that text then comes back as the answer. Set a low
+temperature (`AgentConfig(..., temperature=0)` or `OpenAIProvider(..., temperature=0)`) and pick
+a model with good tool-calling support.
+
 For tests, `teiforge.testing.ScriptedProvider` replays a fixed list of responses without any network.
 
 ## CLI

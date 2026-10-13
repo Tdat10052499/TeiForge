@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 from .config import AgentConfig
 from .events import Event, EventHandler, EventType, RunResult
@@ -16,12 +16,35 @@ from .workspace import Workspace
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_SYSTEM_PROMPT = (
-    "You are {name}, an assistant built with TeiForge. Use the available tools when they "
-    "help you answer accurately. Prefer one tool call at a time and check each result. If a "
-    "tool fails, explain what went wrong instead of guessing. Keep the final answer concise "
-    "and include source links when you used web search."
+#: Opening line of the default system prompt; ``{name}`` is the agent name.
+DEFAULT_SYSTEM_PROMPT = "You are {name}, an assistant built with TeiForge."
+
+_TOOLS_GUIDANCE = (
+    "Available tools: {tools}. Use them when they help you answer accurately, and call a tool "
+    "only through the tool-calling interface, never by writing the call as text. Prefer one tool "
+    "call at a time and check each result. If a tool fails, explain what went wrong instead of "
+    "guessing."
 )
+_NO_TOOLS_GUIDANCE = (
+    "No tools are available in this session. Answer from what you know, and say so plainly "
+    "when a task needs information or actions you cannot access."
+)
+_WEB_SEARCH_GUIDANCE = "Include source links for information you found with web search."
+_ANSWER_GUIDANCE = "Keep the final answer concise."
+
+
+def build_system_prompt(name: str, tool_names: Sequence[str]) -> str:
+    """Build the default system prompt so it only describes tools the agent really has."""
+    parts = [DEFAULT_SYSTEM_PROMPT.format(name=name)]
+    if tool_names:
+        parts.append(_TOOLS_GUIDANCE.format(tools=", ".join(tool_names)))
+    else:
+        parts.append(_NO_TOOLS_GUIDANCE)
+    parts.append(_ANSWER_GUIDANCE)
+    if "web_search" in tool_names:
+        parts.append(_WEB_SEARCH_GUIDANCE)
+    return " ".join(parts)
+
 
 SUMMARY_PROMPT = "You are a concise assistant that summarizes the content of web search results."
 
@@ -211,7 +234,7 @@ class Agent:
     # -- LLM loop ------------------------------------------------------------------
 
     def _system_prompt(self) -> str:
-        return self.config.system_prompt or DEFAULT_SYSTEM_PROMPT.format(name=self.name)
+        return self.config.system_prompt or build_system_prompt(self.name, list(self.tools))
 
     def _run_llm(self, task: str, emit: Callable[..., None]) -> Tuple[str, bool, int]:
         provider = self.provider
@@ -445,4 +468,4 @@ class Agent:
         return self.__str__()
 
 
-__all__ = ["Agent", "DEFAULT_SYSTEM_PROMPT", "ROUTER_RULES", "extract_path"]
+__all__ = ["Agent", "DEFAULT_SYSTEM_PROMPT", "ROUTER_RULES", "build_system_prompt", "extract_path"]
