@@ -1,7 +1,7 @@
 # TeiForge - instructions for Claude Code
 
 TeiForge is a lightweight Python toolkit for building AI agents (tools, memory, an LLM
-tool-calling loop, and a keyword router fallback). Package: `teiforge/`. Python 3.10-3.13.
+tool-calling loop, and a keyword router fallback). Package: `teiforge/`. Python 3.10-3.14.
 
 ## Communication
 
