@@ -402,3 +402,59 @@ def test_default_system_prompt_without_tools_says_so(tmp_path):
     assert "No tools are available" in prompt
     assert "Use the available tools" not in prompt
     assert prompt.startswith("You are prompted, an assistant built with TeiForge.")
+
+
+# -- 0.3.1 regressions (found in the live Ollama test on 14/10/2026) -----------------------
+
+
+def test_fallback_to_router_explains_missing_llm_and_custom_tools(caplog):
+    @tool
+    def days_until(date: str) -> str:
+        """Count days until a date."""
+        return "0 days"
+
+    agent = Agent(name="planner", tools=[days_until])
+    with caplog.at_level("WARNING", logger="teiforge.agent"):
+        result = agent.run_detailed("How many days are left until 2027-01-01?")
+
+    assert result.mode == "router"
+    assert not result.ok
+    assert "No LLM provider is configured" in result.output
+    assert "TEIFORGE_PROVIDER" in result.output
+    assert "days_until" in result.output and "only an LLM provider can call them" in result.output
+    assert sum("No LLM provider is configured" in r.message for r in caplog.records) == 1
+
+    agent.run_detailed("again")
+    assert sum("No LLM provider is configured" in r.message for r in caplog.records) == 1  # warn once
+
+
+def test_explicit_router_mode_does_not_warn_about_missing_llm(caplog, tmp_path):
+    agent = make_router_agent(tmp_path, mode="router")
+    with caplog.at_level("WARNING", logger="teiforge.agent"):
+        output = agent.run("Explain recursion")
+    assert "No LLM provider is configured" not in output
+    assert "keyword router found no matching tool" in output
+    assert not caplog.records
+
+
+def test_provider_none_does_not_warn(caplog):
+    agent = Agent(config=AgentConfig(name="a", provider="none"))
+    with caplog.at_level("WARNING", logger="teiforge.agent"):
+        agent.run("hello")
+    assert not caplog.records
+
+
+def test_agent_model_reports_the_model_actually_used(monkeypatch):
+    monkeypatch.setenv("TEIFORGE_MODEL", "llama3.1")
+    configured = Agent(config=AgentConfig(name="a"))
+    assert configured.model == "llama3.1"
+    assert "llama3.1" in str(configured) and "llama3.1" in configured.get_memory_summary()
+
+    with_provider = Agent(name="b", provider=ScriptedProvider([], model="provider-model"))
+    assert with_provider.model == "provider-model"
+
+    monkeypatch.delenv("TEIFORGE_MODEL")
+    plain = Agent(config=AgentConfig(name="c", model="m1"))
+    assert plain.model == "m1"
+    plain.model = "m2"
+    assert plain.model == "m2" and plain.config.model == "m2"

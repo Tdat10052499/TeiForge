@@ -427,3 +427,11 @@ def test_builtin_tools_without_workspace_returns_shared_instances():
     tools = builtin_tools()
     assert tools["web_search"] is WebSearchTool
     assert tools["file_reader"] is FileReaderTool
+
+
+def test_file_reader_strips_utf8_bom(tmp_path):
+    # Windows PowerShell 5 and older editors write UTF-8 files with a byte-order mark.
+    (tmp_path / "bom.txt").write_bytes("﻿Meeting notes".encode())
+    output = make_file_reader(Workspace(tmp_path)).run({"path": "bom.txt"}).output
+    assert "﻿" not in output
+    assert output.endswith("\n\nMeeting notes")
