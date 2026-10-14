@@ -1,10 +1,9 @@
 version: 2
 updates:
-  - package-ecosystem: pip
-    directory: "/"
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
+  # Python dependencies are not version-updated on purpose. TeiForge is a library and declares
+  # only lower bounds (for example "requests>=2.31.0"); version-update PRs would only raise those
+  # bounds and make TeiForge harder to install next to other packages. Security alerts and
+  # Dependabot security updates are separate settings and still apply.
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
