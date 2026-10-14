@@ -6,6 +6,13 @@ Notable changes to TeiForge are documented here. The format follows
 
 ## Unreleased
 
+### Changed
+
+- Rewrote the start of the README for new users: what TeiForge is for, three short examples,
+  a free local quickstart with Ollama, an offline fallback, and when to choose another framework.
+- Dependabot no longer opens version-update PRs for Python dependencies, which only raised
+  TeiForge's lower bounds; GitHub Actions updates continue.
+
 ## 0.3.0 - 2026-10-13
 
 The project is renamed from **AgentForge** to **TeiForge** because the `agentforge` name is
