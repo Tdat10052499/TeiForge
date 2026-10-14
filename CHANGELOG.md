@@ -6,10 +6,31 @@ Notable changes to TeiForge are documented here. The format follows
 
 ## Unreleased
 
+## 0.3.1 - 2026-10-14
+
+Fixes found by installing 0.3.0 from PyPI and following the README on Windows with Ollama.
+
+### Fixed
+
+- When no LLM provider was configured, the agent silently fell back to the keyword router and
+  answered "I don't have a direct tool for this task yet", even when a matching custom tool was
+  registered. It now logs a one-time warning (`No LLM provider is configured ...`) and the answer
+  explains that no model is configured, how to configure one, and that custom tools need an LLM.
+  The warning is not shown with `mode="router"`, `--no-llm` or `provider="none"`.
+- A task the keyword router cannot handle is now reported with `ok=False` (CLI exit code 1)
+  instead of `ok=True`.
+- `Agent.model`, `str(agent)` and the CLI showed the configured default (`gpt-4o-mini`) while the
+  agent actually used `TEIFORGE_MODEL` (for example `llama3.1`). They now show the model in use.
+- `file_reader` passed the UTF-8 byte-order mark written by Windows PowerShell 5 and some editors
+  to the model. It is now removed.
+
 ### Changed
 
 - Rewrote the start of the README for new users: what TeiForge is for, three short examples,
   a free local quickstart with Ollama, an offline fallback, and when to choose another framework.
+- The README examples use `temperature=0`, and the quickstart explains that environment variables
+  only last for the current terminal and how to check that TeiForge sees the model.
+- Python 3.14 is tested in CI and listed as supported.
 - Dependabot no longer opens version-update PRs for Python dependencies, which only raised
   TeiForge's lower bounds; GitHub Actions updates continue.
 

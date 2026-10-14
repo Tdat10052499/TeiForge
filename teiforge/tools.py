@@ -455,7 +455,7 @@ def make_file_reader(workspace: Optional[Workspace] = None, max_chars: int = 100
         if resolved.is_dir():
             raise ToolError(f"'{path}' is a directory, not a file.")
         try:
-            content = resolved.read_text(encoding="utf-8")
+            content = resolved.read_text(encoding="utf-8-sig")  # drops a UTF-8 BOM if present
         except UnicodeDecodeError as exc:
             raise ToolError(f"'{path}' is not a UTF-8 text file.") from exc
         note = ""

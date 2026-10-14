@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tupl
 
 from .config import AgentConfig
 from .events import Event, EventHandler, EventType, RunResult
-from .llm import LLMError, LLMProvider, Message, provider_from_config
+from .llm import MODEL_ENV_VAR, PROVIDER_ENV_VAR, LLMError, LLMProvider, Message, provider_from_config
 from .memory import Memory
 from .tools import Tool, ToolError, ToolResult, builtin_tools, parse_write_command, tool
 from .workspace import Workspace
@@ -45,6 +45,15 @@ def build_system_prompt(name: str, tool_names: Sequence[str]) -> str:
         parts.append(_WEB_SEARCH_GUIDANCE)
     return " ".join(parts)
 
+
+QUICKSTART_URL = "https://github.com/Tdat10052499/teiforge#quickstart-free-on-your-own-machine-5-minutes"
+
+NO_LLM_WARNING = (
+    "No LLM provider is configured, so TeiForge is using its keyword router. Set "
+    "TEIFORGE_PROVIDER, TEIFORGE_BASE_URL and TEIFORGE_MODEL (for Ollama) or OPENAI_API_KEY / "
+    "ANTHROPIC_API_KEY to use a model, or pass AgentConfig(mode='router') to silence this warning. "
+    "See " + QUICKSTART_URL
+)
 
 SUMMARY_PROMPT = "You are a concise assistant that summarizes the content of web search results."
 
@@ -115,7 +124,6 @@ class Agent:
 
         self.config = config
         self.name = config.name
-        self.model = config.model
         self.tools: Dict[str, Tool] = {}
         self.memory = Memory(max_entries=config.memory_size)
         self.task_count = 0
@@ -139,6 +147,9 @@ class Agent:
 
         self._provider: Optional[LLMProvider] = provider
         self._provider_resolved = provider is not None
+        self._provider_explicit = provider is not None
+        self._fell_back_to_router = False
+        self._warned_no_llm = False
 
     # -- tools ---------------------------------------------------------------------
 
@@ -177,6 +188,33 @@ class Agent:
     def provider(self, value: Optional[LLMProvider]) -> None:
         self._provider = value
         self._provider_resolved = True
+        self._provider_explicit = True
+
+    @property
+    def model(self) -> str:
+        """The model this agent uses.
+
+        When an LLM provider is configured this is the provider's model, which reflects the
+        ``TEIFORGE_MODEL`` environment variable; otherwise it is the configured model.
+        """
+        provider: Optional[LLMProvider] = None
+        if self._provider_resolved:
+            provider = self._provider
+        elif self.enable_llm and self.config.mode != "router":
+            try:
+                provider = self.provider
+            except LLMError:
+                provider = None
+        if provider is not None:
+            return str(getattr(provider, "model", self.config.model))
+        return os.getenv(MODEL_ENV_VAR) or self.config.model
+
+    @model.setter
+    def model(self, value: str) -> None:
+        self.config.model = value
+        if not self._provider_explicit:
+            self._provider = None
+            self._provider_resolved = False
 
     # -- running -------------------------------------------------------------------
 
@@ -216,6 +254,7 @@ class Agent:
         return RunResult(task=user_input, output=output, ok=ok, mode=mode, steps=steps, events=events)
 
     def _select_mode(self) -> str:
+        self._fell_back_to_router = False
         if self.config.mode == "router" or not self.enable_llm:
             return "router"
         provider = self.provider
@@ -224,7 +263,18 @@ class Agent:
                 "mode='llm' needs an LLM provider. Set OPENAI_API_KEY or ANTHROPIC_API_KEY, "
                 "or pass provider=..."
             )
-        return "llm" if provider is not None else "router"
+        if provider is not None:
+            return "llm"
+        if not self._llm_disabled_on_purpose():
+            self._fell_back_to_router = True
+            if not self._warned_no_llm:
+                logger.warning(NO_LLM_WARNING)
+                self._warned_no_llm = True
+        return "router"
+
+    def _llm_disabled_on_purpose(self) -> bool:
+        choice = self.config.provider or os.getenv(PROVIDER_ENV_VAR) or ""
+        return choice.strip().lower() == "none"
 
     def _record_task(self, user_input: str, response: str) -> None:
         self.task_count += 1
@@ -302,7 +352,7 @@ class Agent:
     def _run_router(self, user_input: str, emit: Callable[..., None]) -> Tuple[str, bool]:
         tool_name = self.route(user_input)
         if tool_name is None:
-            return self._default_response(user_input), True
+            return self._default_response(user_input), False
 
         selected = self.tools[tool_name]
         try:
@@ -374,12 +424,33 @@ class Agent:
         return f"[Using {tool_name}]\n\n{tool_output}"
 
     def _default_response(self, user_input: str) -> str:
-        return (
-            f"Agent '{self.name}' received task: \"{user_input}\"\n\n"
-            "I don't have a direct tool for this task yet.\n\n"
-            f"{self.get_tools_description()}\n\n"
-            "Try keywords like 'search', 'read', 'write' or 'run', or configure an LLM provider."
-        )
+        router_tools = {name for name, _ in ROUTER_RULES}
+        custom = [name for name in self.tools if name not in router_tools]
+        parts = [f"Agent '{self.name}' received task: \"{user_input}\""]
+        if self._fell_back_to_router:
+            parts.append(
+                "No LLM provider is configured, so TeiForge used its keyword router. The router "
+                "only handles simple tasks such as 'search <query>', 'read <file>', "
+                "'write:<file>:<text>' and 'run <command>'."
+            )
+        else:
+            parts.append(
+                "The keyword router found no matching tool. It only handles simple tasks such as "
+                "'search <query>', 'read <file>', 'write:<file>:<text>' and 'run <command>'."
+            )
+        if custom:
+            parts.append(
+                f"Custom tools ({', '.join(custom)}) are not used by the keyword router; "
+                "only an LLM provider can call them."
+            )
+        if self._fell_back_to_router:
+            parts.append(
+                "To use a model, set TEIFORGE_PROVIDER, TEIFORGE_BASE_URL and TEIFORGE_MODEL (for "
+                "Ollama) or OPENAI_API_KEY / ANTHROPIC_API_KEY in the same terminal, then run again. "
+                f"See {QUICKSTART_URL}"
+            )
+        parts.append(self.get_tools_description())
+        return "\n\n".join(parts)
 
     # -- search and save -------------------------------------------------------------
 

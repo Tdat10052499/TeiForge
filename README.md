@@ -2,7 +2,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/teiforge)](https://pypi.org/project/teiforge/)
 [![CI](https://github.com/Tdat10052499/teiforge/actions/workflows/ci.yml/badge.svg)](https://github.com/Tdat10052499/teiforge/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/python-3.10%E2%80%933.13-blue)](pyproject.toml)
+[![Python](https://img.shields.io/badge/python-3.10%E2%80%933.14-blue)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 **A small, readable Python toolkit for building AI agents that can safely work with your files.**
@@ -28,7 +28,7 @@ Hugging Face Text Embeddings Inference (TEI).*
 ```python
 from teiforge import Agent, AgentConfig
 
-agent = Agent(config=AgentConfig(name="reader", tools=["file_reader"], workspace="notes"))
+agent = Agent(config=AgentConfig(name="reader", tools=["file_reader"], workspace="notes", temperature=0))
 print(agent.run("Read meeting.txt and list the action items with their owners."))
 ```
 
@@ -37,7 +37,7 @@ print(agent.run("Read meeting.txt and list the action items with their owners.")
 ```python
 import datetime
 
-from teiforge import Agent, ToolError, tool
+from teiforge import Agent, AgentConfig, ToolError, tool
 
 
 @tool
@@ -54,7 +54,7 @@ def days_until(date: str) -> str:
     return f"{(target - datetime.date.today()).days} days"
 
 
-agent = Agent(name="planner", tools=[days_until])
+agent = Agent(config=AgentConfig(name="planner", temperature=0), tools=[days_until])
 print(agent.run("How many days are left until 2027-01-01?"))
 ```
 
@@ -99,6 +99,19 @@ export TEIFORGE_BASE_URL=http://127.0.0.1:11434/v1
 export TEIFORGE_MODEL=llama3.1
 ```
 
+These variables only last for the current terminal window. Run every command below in that same
+window, or set them permanently (PowerShell: `setx TEIFORGE_PROVIDER openai`, and likewise for the
+other two, then open a new window; macOS / Linux: add the `export` lines to `~/.bashrc` or `~/.zshrc`).
+
+Check that TeiForge sees the model. This should print `OpenAIProvider llama3.1`:
+
+```shell
+python -c "from teiforge import Agent, AgentConfig; p = Agent(config=AgentConfig(name='check')).provider; print(type(p).__name__, getattr(p, 'model', None))"
+```
+
+If it prints `NoneType None`, the variables are not set in this window. Without a model, TeiForge
+falls back to its keyword router and warns `No LLM provider is configured`.
+
 **3. Try it**
 
 Create a folder `notes` with a text file `meeting.txt` in it, then:
@@ -114,8 +127,10 @@ To see the sandbox at work, ask for a file outside `notes`; it is refused before
 teiforge run "Read ../secret.txt" --agent files --workspace notes --no-llm
 ```
 
-**Tip for local models:** small models (around 8B parameters) sometimes write a tool call as plain
-text instead of calling the tool. A temperature of `0` makes them more reliable. In Python, pass
+**Tip for local models:** small models (around 8B parameters) are not always reliable: they may
+misread a tool result or write a tool call as plain text instead of calling the tool. A
+temperature of `0` makes them more consistent; if an answer looks wrong, run it again or try a
+larger model. In Python, pass
 `AgentConfig(..., temperature=0)`; for the CLI, put it in a config file (see [CLI](#cli)).
 
 ### No model at all?
