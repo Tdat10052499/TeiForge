@@ -258,10 +258,15 @@ def cmd_bench(args: argparse.Namespace) -> int:
     print(f"Running {len(selected)} scenario(s) x {args.runs} run(s)...", file=sys.stderr)
     report = run_bench(config, runs=args.runs, scenarios=selected, progress=progress)
     print(file=sys.stderr)
+    full_report = json.dumps(report.to_dict(), ensure_ascii=False, indent=2)
+    if args.out:
+        Path(args.out).write_text(full_report, encoding="utf-8")
     if args.json:
-        print(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
+        print(full_report)
     else:
         print(report.format_table())
+        if args.out:
+            print(f"Full report saved to {args.out}")
     return 0
 
 
@@ -318,6 +323,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     bench.add_argument("--temperature", type=float, default=0.7, help="Model temperature (default: 0.7).")
     bench.add_argument("--json", action="store_true", help="Print the full report, with answers, as JSON.")
+    bench.add_argument("--out", default=None, help="Also save the full JSON report to this file.")
     bench.add_argument("--list", action="store_true", help="List the scenarios and failure reasons.")
     bench.add_argument("--provider", choices=["openai", "anthropic"], default=None)
     bench.add_argument("--model", default=None)

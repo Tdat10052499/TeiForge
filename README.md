@@ -213,6 +213,7 @@ confidence interval and the reason for every failure:
 teiforge bench --runs 10                 # all scenarios, 10 runs each
 teiforge bench --list                    # scenarios and failure reasons
 teiforge bench --scenario custom_tool --temperature 0 --json
+teiforge bench --runs 10 --out bench.json   # table on screen, full report with answers in a file
 ```
 
 ```text

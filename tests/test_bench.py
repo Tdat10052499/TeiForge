@@ -166,3 +166,7 @@ def test_bench_cli(monkeypatch, capsys):
     assert ".F" in captured.err and "Model: openai / m" in captured.out
     assert main([*args, "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["runs"] == 0
+    assert main([*args, "--out", "report.json"]) == 0
+    assert "Full report saved to report.json" in capsys.readouterr().out
+    with open("report.json", encoding="utf-8") as handle:
+        assert json.load(handle)["provider"] == "openai"
