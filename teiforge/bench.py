@@ -226,6 +226,7 @@ class ScenarioReport:
     description: str
     failures: List[Optional[str]] = field(default_factory=list)
     outputs: List[str] = field(default_factory=list)
+    recovered: int = 0
 
     @property
     def runs(self) -> int:
@@ -251,6 +252,7 @@ class ScenarioReport:
             "pass_rate": self.passes / self.runs if self.runs else 0.0,
             "ci95": [round(low, 3), round(high, 3)],
             "failures": self.failure_counts(),
+            "recovered_runs": self.recovered,
             "outputs": self.outputs,
         }
 
@@ -262,6 +264,7 @@ class BenchReport:
     provider: str
     model: str
     temperature: float
+    recover_text_tool_calls: bool = True
     scenarios: List[ScenarioReport] = field(default_factory=list)
 
     @property
@@ -278,6 +281,7 @@ class BenchReport:
             "provider": self.provider,
             "model": self.model,
             "temperature": self.temperature,
+            "recover_text_tool_calls": self.recover_text_tool_calls,
             "runs": self.runs,
             "passes": self.passes,
             "ci95": [round(low, 3), round(high, 3)],
@@ -286,13 +290,17 @@ class BenchReport:
 
     def format_table(self) -> str:
         lines = [
-            f"Model: {self.provider} / {self.model}, temperature {self.temperature}",
+            f"Model: {self.provider} / {self.model}, temperature {self.temperature}, "
+            f"text tool-call recovery {'on' if self.recover_text_tool_calls else 'off'}",
             "",
             f"{'scenario':<14} {'passed':>8} {'95% CI':>12}  failures",
         ]
         for item in self.scenarios:
             low, high = wilson_interval(item.passes, item.runs)
-            failures = ", ".join(f"{name} x{count}" for name, count in item.failure_counts().items())
+            notes = [f"{name} x{count}" for name, count in item.failure_counts().items()]
+            if item.recovered:
+                notes.append(f"(recovered text calls in {item.recovered} run(s))")
+            failures = ", ".join(notes)
             lines.append(
                 f"{item.name:<14} {f'{item.passes}/{item.runs}':>8} "
                 f"{f'{low:.0%}-{high:.0%}':>12}  {failures or '-'}"
@@ -319,8 +327,12 @@ def _prepare(scenario: Scenario, root: Path) -> Path:
 
 def run_scenario(
     scenario: Scenario, config: AgentConfig, provider: Optional[LLMProvider] = None
-) -> Tuple[Optional[str], str]:
-    """Run ``scenario`` once in a fresh temporary workspace; return (failure reason, output)."""
+) -> Tuple[Optional[str], str, bool]:
+    """Run ``scenario`` once in a fresh temporary workspace.
+
+    Returns the failure reason (``None`` for a pass), the answer, and whether a tool call
+    written as text was recovered during the run.
+    """
     with tempfile.TemporaryDirectory(prefix="teiforge-bench-") as tmp:
         workspace = _prepare(scenario, Path(tmp))
         run_config = AgentConfig.from_dict({**config.to_dict(), "tools": list(scenario.builtin_tools)})
@@ -332,8 +344,9 @@ def run_scenario(
         try:
             result = agent.run_detailed(scenario.task)
         except LLMError as exc:  # pragma: no cover - run_detailed already converts these
-            return "error", f"Error: {exc}"
-        return scenario.check(result), result.output
+            return "error", f"Error: {exc}", False
+        recovered = any(event.data.get("recovered") for event in result.tool_calls())
+        return scenario.check(result), result.output, recovered
 
 
 def run_bench(
@@ -363,12 +376,14 @@ def run_bench(
         provider=str(getattr(provider, "name", "custom")),
         model=str(getattr(provider, "model", config.model)),
         temperature=config.temperature,
+        recover_text_tool_calls=config.recover_text_tool_calls,
     )
     for scenario in scenarios:
         item = ScenarioReport(name=scenario.name, description=scenario.description)
         for _ in range(runs):
             run_provider = provider_factory(config) if provider_factory else provider
-            reason, output = run_scenario(scenario, config, run_provider)
+            reason, output, recovered = run_scenario(scenario, config, run_provider)
+            item.recovered += int(recovered)
             item.failures.append(reason)
             item.outputs.append(output)
             if progress is not None:

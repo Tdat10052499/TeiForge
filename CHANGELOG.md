@@ -12,6 +12,12 @@ Notable changes to TeiForge are documented here. The format follows
   a file, extracting action items, a custom `@tool`, the workspace sandbox and chat history) run
   several times against the configured model. The report gives the pass rate with a 95% Wilson
   interval and classifies each failure (`text_tool_call`, `no_tool_call`, `wrong_answer`, ...).
+- Tool calls written as text are recovered: when a model replies with only a tool call as plain
+  text (bare JSON, a fenced code block, `<tool_call>` tags or Llama's `<|python_tag|>`) that names
+  one of the agent's tools, the agent runs it instead of returning the JSON as the answer. The
+  `tool_call` event carries `"recovered": true`. Controlled by the new
+  `AgentConfig.recover_text_tool_calls` (default `True`) and `teiforge bench --no-recovery`.
+  Text that only mentions a tool, or names a tool the agent does not have, is never run.
 
 ## 0.3.1 - 2026-10-14
 

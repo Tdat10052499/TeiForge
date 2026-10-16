@@ -16,6 +16,7 @@ from teiforge.llm import (
     OpenAIProvider,
     ToolCall,
     _parse_arguments,
+    parse_text_tool_calls,
     provider_from_config,
 )
 from teiforge.testing import ScriptedProvider
@@ -268,3 +269,65 @@ def test_reasoning_models_use_max_completion_tokens():
     request = client.chat.completions.create.call_args.kwargs
     assert request["max_completion_tokens"] == 99
     assert "max_tokens" not in request and "temperature" not in request
+
+
+# -- tool calls written as text ---------------------------------------------------------
+
+NAMES = ["file_reader", "days_until"]
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        '{"name": "file_reader", "parameters": {"path": "meeting.txt"}}',
+        '  {"name": "file_reader", "arguments": "{\\"path\\": \\"meeting.txt\\"}"}  ',
+        '```json\n{"name": "file_reader", "arguments": {"path": "meeting.txt"}}\n```',
+        '<tool_call>\n{"name": "file_reader", "arguments": {"path": "meeting.txt"}}\n</tool_call>',
+        '<|python_tag|>{"name": "file_reader", "parameters": {"path": "meeting.txt"}}',
+        '{"type": "function", "function": {"name": "file_reader", "arguments": {"path": "meeting.txt"}}}',
+    ],
+)
+def test_parse_text_tool_calls_accepts_common_formats(content):
+    calls = parse_text_tool_calls(content, NAMES)
+    assert [(call.id, call.name, call.arguments) for call in calls] == [
+        ("text_call_1", "file_reader", {"path": "meeting.txt"})
+    ]
+
+
+def test_parse_text_tool_calls_handles_several_calls():
+    as_list = '[{"name": "file_reader", "parameters": {"path": "a.txt"}}, {"name": "days_until"}]'
+    per_line = '{"name": "file_reader", "parameters": {"path": "a.txt"}};\n\n{"name": "days_until"}'
+    tagged = (
+        '<tool_call>{"name": "file_reader", "arguments": {"path": "a.txt"}}</tool_call>'
+        '<tool_call>{"name": "days_until", "arguments": ""}</tool_call>'
+    )
+    for content in (as_list, per_line, tagged):
+        calls = parse_text_tool_calls(content, NAMES)
+        assert [call.name for call in calls] == ["file_reader", "days_until"]
+        assert [call.id for call in calls] == ["text_call_1", "text_call_2"]
+        assert calls[1].arguments == {}
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        None,
+        "",
+        "The file_reader tool read meeting.txt for you.",
+        'I will call {"name": "file_reader", "parameters": {"path": "a.txt"}} now.',
+        '{"name": "delete_everything", "parameters": {}}',
+        '[{"name": "file_reader", "parameters": {}}, {"name": "unknown"}]',
+        '{"name": "file_reader", "parameters": ["a.txt"]}',
+        '{"name": "file_reader", "arguments": "not json"}',
+        '{"tool": "file_reader"}',
+        '"file_reader"',
+        '<tool_call>{"name": "file_reader"}</tool_call> and some prose',
+        '{"name": "file_reader"}\nnot json',
+    ],
+)
+def test_parse_text_tool_calls_rejects_anything_else(content):
+    assert parse_text_tool_calls(content, NAMES) == []
+
+
+def test_parse_text_tool_calls_needs_registered_tools():
+    assert parse_text_tool_calls('{"name": "file_reader"}', []) == []

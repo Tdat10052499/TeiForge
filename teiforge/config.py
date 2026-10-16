@@ -20,6 +20,8 @@ class AgentConfig:
     ``provider`` is ``None`` (auto-detect from the environment), ``"openai"``,
     ``"anthropic"`` or ``"none"``. ``mode`` is ``"auto"`` (use the LLM when one is
     configured, otherwise the keyword router), ``"llm"`` or ``"router"``.
+    ``recover_text_tool_calls`` runs tool calls that the model wrote as plain text instead
+    of through the tool-calling interface (see :func:`teiforge.llm.parse_text_tool_calls`).
     """
 
     name: str
@@ -34,6 +36,7 @@ class AgentConfig:
     max_steps: int = 6
     workspace: Optional[str] = None
     mode: str = "auto"
+    recover_text_tool_calls: bool = True
 
     def __post_init__(self) -> None:
         if not self.name.strip():
