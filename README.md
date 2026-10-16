@@ -203,6 +203,29 @@ agent = Agent(config=AgentConfig(name="local", tools=["file_reader"]), provider=
 
 For tests, `teiforge.testing.ScriptedProvider` replays a fixed list of responses without any network.
 
+### Measuring how well your model works
+
+Small local models do not always call tools correctly. `teiforge bench` runs six fixed tasks
+several times against the model you configured and reports how often each one passed, with a 95%
+confidence interval and the reason for every failure:
+
+```shell
+teiforge bench --runs 10                 # all scenarios, 10 runs each
+teiforge bench --list                    # scenarios and failure reasons
+teiforge bench --scenario custom_tool --temperature 0 --json
+```
+
+```text
+scenario         passed       95% CI  failures
+answer_only       10/10     72%-100%  -
+read_summary       8/10      49%-94%  text_tool_call x2
+...
+```
+
+Every run uses a fresh temporary workspace and calls the model for real, so it takes a few minutes
+on a laptop (and costs money with a paid API). Compare results only between runs that use the same
+model, provider and temperature. The table above is an illustration, not a measurement.
+
 ### CLI
 
 ```shell
@@ -211,6 +234,7 @@ teiforge run "search: python 3.13 release" --json          # full result with ev
 teiforge search "AI agent libraries" --out results.txt --no-llm
 teiforge chat --agent all --memory chat.json             # interactive; type /help
 teiforge tools                                           # list tools and parameters
+teiforge bench --runs 10                                 # measure the configured model
 ```
 
 Common options: `--agent research|files|all`, `--tools web_search,file_reader`,
