@@ -152,7 +152,11 @@ def _check_history(result: RunResult) -> Optional[str]:
     if reason:
         return reason
     text = result.output.lower()
-    return None if re.search(r"\bwho\b", text) and "slide" in text else "wrong_answer"
+    names_question = bool(re.search(r"\bwho\b", text)) and "slide" in text
+    recalls_request = bool(re.search(r"\b(asked|question)\b", text)) and (
+        "meeting" in text or "slide" in text
+    )
+    return None if names_question or recalls_request else "wrong_answer"
 
 
 SCENARIOS: Tuple[Scenario, ...] = (
@@ -226,6 +230,7 @@ class ScenarioReport:
     description: str
     failures: List[Optional[str]] = field(default_factory=list)
     outputs: List[str] = field(default_factory=list)
+    tool_calls: List[List[Dict[str, Any]]] = field(default_factory=list)
     recovered: int = 0
     self_checked: int = 0
 
@@ -256,6 +261,8 @@ class ScenarioReport:
             "recovered_runs": self.recovered,
             "self_checked_runs": self.self_checked,
             "outputs": self.outputs,
+            "reasons": self.failures,
+            "tool_calls": self.tool_calls,
         }
 
 
@@ -332,6 +339,25 @@ def _prepare(scenario: Scenario, root: Path) -> Path:
     return workspace
 
 
+def trace_tool_calls(result: RunResult) -> List[Dict[str, Any]]:
+    """Return each tool call of ``result`` with its arguments and whether it succeeded."""
+    outcomes = {event.data.get("id"): event.data for event in result.events if event.type == "tool_result"}
+    trace = []
+    for event in result.tool_calls():
+        outcome = outcomes.get(event.data.get("id"), {})
+        entry: Dict[str, Any] = {
+            "name": event.data.get("name"),
+            "arguments": event.data.get("arguments") or {},
+            "ok": bool(outcome.get("ok")),
+        }
+        if event.data.get("recovered"):
+            entry["recovered"] = True
+        if not outcome.get("ok"):
+            entry["error"] = str(outcome.get("output", ""))[:200]
+        trace.append(entry)
+    return trace
+
+
 def run_scenario(
     scenario: Scenario, config: AgentConfig, provider: Optional[LLMProvider] = None
 ) -> Tuple[Optional[str], str, Set[str]]:
@@ -341,6 +367,13 @@ def run_scenario(
     run: ``"recovered"`` (a tool call written as text was run) and ``"self_check"`` (the model
     was asked to answer again).
     """
+    reason, output, aids, _ = _run_once(scenario, config, provider)
+    return reason, output, aids
+
+
+def _run_once(
+    scenario: Scenario, config: AgentConfig, provider: Optional[LLMProvider]
+) -> Tuple[Optional[str], str, Set[str], List[Dict[str, Any]]]:
     with tempfile.TemporaryDirectory(prefix="teiforge-bench-") as tmp:
         workspace = _prepare(scenario, Path(tmp))
         run_config = AgentConfig.from_dict({**config.to_dict(), "tools": list(scenario.builtin_tools)})
@@ -352,13 +385,13 @@ def run_scenario(
         try:
             result = agent.run_detailed(scenario.task)
         except LLMError as exc:  # pragma: no cover - run_detailed already converts these
-            return "error", f"Error: {exc}", set()
+            return "error", f"Error: {exc}", set(), []
         aids = set()
         if any(event.data.get("recovered") for event in result.tool_calls()):
             aids.add("recovered")
         if any(event.type == "self_check" for event in result.events):
             aids.add("self_check")
-        return scenario.check(result), result.output, aids
+        return scenario.check(result), result.output, aids, trace_tool_calls(result)
 
 
 def run_bench(
@@ -395,11 +428,12 @@ def run_bench(
         item = ScenarioReport(name=scenario.name, description=scenario.description)
         for _ in range(runs):
             run_provider = provider_factory(config) if provider_factory else provider
-            reason, output, aids = run_scenario(scenario, config, run_provider)
+            reason, output, aids, calls = _run_once(scenario, config, run_provider)
             item.recovered += int("recovered" in aids)
             item.self_checked += int("self_check" in aids)
             item.failures.append(reason)
             item.outputs.append(output)
+            item.tool_calls.append(calls)
             if progress is not None:
                 progress(scenario.name, reason)
         report.scenarios.append(item)
@@ -416,5 +450,6 @@ __all__ = [
     "looks_like_text_tool_call",
     "run_bench",
     "run_scenario",
+    "trace_tool_calls",
     "wilson_interval",
 ]

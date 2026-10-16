@@ -480,6 +480,13 @@ def test_default_system_prompt_mentions_web_search_only_when_available(tmp_path)
     assert "Available tools: web_search, file_reader." in with_search
 
 
+def test_default_system_prompt_asks_for_the_answer_not_a_tool_report(tmp_path):
+    prompt = _system_prompt_sent(tmp_path, ["file_reader"])
+    assert "Call a tool only when the task needs it" in prompt
+    assert "instead of describing the tool calls" in prompt
+    assert "respond to the user's latest message" in prompt
+
+
 def test_default_system_prompt_without_tools_says_so(tmp_path):
     prompt = _system_prompt_sent(tmp_path, [])
     assert "No tools are available" in prompt

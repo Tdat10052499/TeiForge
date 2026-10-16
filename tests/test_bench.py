@@ -12,6 +12,7 @@ from teiforge.bench import (
     looks_like_text_tool_call,
     run_bench,
     run_scenario,
+    trace_tool_calls,
     wilson_interval,
 )
 from teiforge.cli import main
@@ -99,6 +100,24 @@ def test_chat_history_is_in_the_prompt():
     assert run("chat_history", ["Minh prepares the demo slides."])[0] == "wrong_answer"
 
 
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "When you asked me to read meeting.txt, I found that Minh prepares the demo slides.",
+        'Your question was "Who prepares the slides?"',
+    ],
+)
+def test_chat_history_accepts_recalling_the_request(answer):
+    # Regression: answers that recall the earlier request without the word "who" failed.
+    assert run("chat_history", [answer])[0] is None
+
+
+def test_chat_history_still_rejects_answering_the_old_question_again():
+    assert run("chat_history", ["According to the meeting.txt file, Minh prepares the slides."])[0] == (
+        "wrong_answer"
+    )
+
+
 def test_errors_and_router_mode_are_failures():
     assert run("answer_only", [LLMResponse(content="")])[0] == "error"
     reason, _, _ = run_scenario(SCENARIO["answer_only"], AgentConfig(name="b", mode="router"))
@@ -147,6 +166,8 @@ def test_run_bench_reports_counts():
     )
     data = report.to_dict()
     assert data["model"] == "tiny" and data["runs"] == 4 and data["passes"] == 2
+    assert data["scenarios"][1]["reasons"] == ["wrong_answer", "wrong_answer"]
+    assert data["scenarios"][0]["tool_calls"] == [[], []]
     assert data["scenarios"][1]["failures"] == {"wrong_answer": 2}
     assert progress[0] == ("answer_only", None)
     report.scenarios[0].recovered = 1
@@ -203,3 +224,35 @@ def test_bench_cli(monkeypatch, capsys):
     assert main([*args, "--no-recovery", "--no-self-check"]) == 0
     assert seen["config"].recover_text_tool_calls is False and seen["config"].self_check is False
     assert "recovery off, self-check off" in capsys.readouterr().out
+
+
+def test_trace_tool_calls_records_names_arguments_and_errors(tmp_path):
+    from teiforge import Agent
+
+    provider = ScriptedProvider(
+        [
+            {"tool": "file_reader", "args": {"path": "missing.txt"}},
+            {"tool": "file_reader", "args": {"path": "notes.txt"}},
+            "done",
+        ]
+    )
+    (tmp_path / "notes.txt").write_text("hello", encoding="utf-8")
+    agent = Agent(config=AgentConfig(name="t", tools=["file_reader"]), workspace=str(tmp_path))
+    agent.provider = provider
+    trace = trace_tool_calls(agent.run_detailed("Read the notes"))
+    assert [entry["name"] for entry in trace] == ["file_reader", "file_reader"]
+    assert trace[0]["ok"] is False and "missing.txt" in trace[0]["error"]
+    assert trace[1] == {"name": "file_reader", "arguments": {"path": "notes.txt"}, "ok": True}
+
+
+def test_run_bench_saves_the_tool_calls_of_each_run():
+    script = [{"tool": "file_writer", "args": {"path": "out.txt", "content": "pong"}}, "pong"]
+    report = run_bench(
+        CONFIG,
+        runs=1,
+        scenarios=[SCENARIO["answer_only"]],
+        provider_factory=lambda c: ScriptedProvider(script),
+    )
+    item = report.to_dict()["scenarios"][0]
+    assert item["reasons"] == ["unneeded_tool_call"]
+    assert item["tool_calls"][0][0]["name"] == "file_writer"

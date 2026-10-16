@@ -29,7 +29,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_SYSTEM_PROMPT = "You are {name}, an assistant built with TeiForge."
 
 _TOOLS_GUIDANCE = (
-    "Available tools: {tools}. Use them when they help you answer accurately, and call a tool "
+    "Available tools: {tools}. Call a tool only when the task needs it, and answer directly "
+    "when it does not. Call a tool "
     "only through the tool-calling interface, never by writing the call as text. Prefer one tool "
     "call at a time and check each result. If a tool fails, explain what went wrong instead of "
     "guessing."
@@ -39,7 +40,11 @@ _NO_TOOLS_GUIDANCE = (
     "when a task needs information or actions you cannot access."
 )
 _WEB_SEARCH_GUIDANCE = "Include source links for information you found with web search."
-_ANSWER_GUIDANCE = "Keep the final answer concise."
+_ANSWER_GUIDANCE = (
+    "Your final answer must respond to the user's latest message. After using tools, give the "
+    "answer itself (for example the number or the facts you found) instead of describing the "
+    "tool calls. Keep the final answer concise."
+)
 
 
 def build_system_prompt(name: str, tool_names: Sequence[str]) -> str:
