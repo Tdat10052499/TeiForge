@@ -4,12 +4,13 @@ import asyncio
 import json
 import threading
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
 pytest.importorskip("textual")
 
-from textual.widgets import Button, Input, Markdown, RichLog, Select, Static  # noqa: E402
+from textual.widgets import Button, DirectoryTree, Input, Markdown, RichLog, Select, Static  # noqa: E402
 
 import teiforge.tui as tui_package  # noqa: E402
 import teiforge.tui.app as tui_app  # noqa: E402
@@ -300,6 +301,14 @@ def test_saved_memory_is_loaded_and_bad_files_are_reported(home, workspace):
             await pilot.pause()
             assert len(app.agent.memory) == 2
             assert "2 earlier messages" in str(app.query_one("#status", Static).render())
+            # The earlier conversation is shown again, not only counted.
+            assert texts(app, ".you") == ["You  earlier"]
+            assert any(widget.source == "reply" for widget in app.query(".answer"))
+            await ask(pilot, app, "/memory")
+            await pilot.pause()
+            summary = app.query(Markdown).last().source
+            assert "Memory entries: 2" in summary
+            assert "**You:** earlier" in summary and "**TeiForge:** reply" in summary
 
     asyncio.run(loaded())
     (home / "chat.json").write_text("{not json", encoding="utf-8")
@@ -326,6 +335,32 @@ def test_router_mode_without_a_model(home, workspace):
 
 
 # -- setup -------------------------------------------------------------------------------
+
+
+def test_setup_again_switches_folder_without_crashing(home, workspace, tmp_path, monkeypatch):
+    """Regression: saving setup a second time mounted a second DirectoryTree with the same id."""
+    other = tmp_path / "other"
+    (other / "inner").mkdir(parents=True)
+
+    async def scenario():
+        app = TeiForgeApp(make_config(workspace), provider=ScriptedProvider([]))
+        async with app.run_test(size=SIZE) as pilot:
+            await pilot.pause()
+            await pilot.press("f2")
+            assert await wait_until(pilot, lambda: isinstance(app.screen, SetupScreen))
+            screen = app.screen
+            screen.query_one("#provider", Select).value = "none"
+            name = screen.query_one("#model-name", Input)
+            assert await wait_until(pilot, lambda: not name.display)
+            screen.query_one("#workspace", Input).value = str(other)
+            screen.query_one("#save", Button).press()
+            assert await wait_until(pilot, lambda: not isinstance(app.screen, SetupScreen))
+            await pilot.pause()
+            trees = list(app.query(DirectoryTree))
+            assert len(trees) == 1 and Path(trees[0].path) == other
+            assert "workspace: other" in app.sub_title
+
+    asyncio.run(scenario())
 
 
 def test_first_run_setup_tests_and_saves_ollama(home, workspace, monkeypatch):

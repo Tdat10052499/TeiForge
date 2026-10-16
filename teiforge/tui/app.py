@@ -49,7 +49,7 @@ HELP_TEXT = """\
 | --- | --- |
 | `/help` | Show this help |
 | `/tools` | List the agent's tools |
-| `/memory` | Show the memory summary |
+| `/memory` | Show the memory summary and the last messages |
 | `/clear` | Forget the conversation |
 | `/setup` | Choose another model or folder |
 | `/exit` | Save and quit (`exit`, `quit` and Ctrl+Q work too) |
@@ -61,6 +61,8 @@ you before it writes a file.
 """
 
 TEST_PROMPT = "Reply with only the word pong."
+HISTORY_SHOWN = 20  # messages of a saved conversation shown again at startup
+MEMORY_SHOWN = 10  # messages listed by /memory
 CHAT_AGENT_NAME = "teiforge"
 
 PROVIDER_CHOICES: List[Tuple[str, str]] = [
@@ -94,6 +96,11 @@ ApprovalScreen { align: center middle; }
 #approval-text { height: auto; max-height: 20; margin: 1 0; }
 #approval-buttons { height: auto; }
 """
+
+
+def _one_line(text: str, limit: int = 100) -> str:
+    text = " ".join(text.split())
+    return text if len(text) <= limit else text[: limit - 3] + "..."
 
 
 def config_from_choices(provider: str, model: str, workspace: str) -> AgentConfig:
@@ -335,11 +342,13 @@ class TeiForgeApp(App[None]):
         agent = Agent(config=config, provider=self.provider_override, approver=self.approve)
         if config.provider == "none":
             agent.config.mode = "router"
+        restored = False
         if self.agent is not None:
             agent.memory = self.agent.memory
         elif self.memory_path.is_file():
             try:
                 agent.memory = Memory.load(self.memory_path, max_entries=config.memory_size)
+                restored = True
             except (OSError, ValueError, KeyError):
                 self.notify("The saved conversation could not be read; starting fresh.", severity="warning")
         self.agent = agent
@@ -349,8 +358,25 @@ class TeiForgeApp(App[None]):
         prompt = self.query_one("#prompt", Input)
         prompt.disabled = False
         prompt.focus()
+        if restored:
+            self.show_history()
         loaded = len(agent.memory)
         self.set_status(f"Ready. {loaded} earlier messages loaded." if loaded else "Ready.")
+
+    def show_history(self) -> None:
+        """Show the most recent turns of a conversation loaded from disk."""
+        assert self.agent is not None
+        turns = [entry for entry in self.agent.memory.get() if entry.role in {"user", "assistant"}]
+        if not turns:
+            return
+        shown = turns[-HISTORY_SHOWN:]
+        hidden = len(turns) - len(shown)
+        note = "Earlier conversation"
+        if hidden:
+            note += f" ({hidden} older messages not shown)"
+        self.add_message("note", f"*{note}*")
+        for entry in shown:
+            self.add_message("you" if entry.role == "user" else "answer", entry.content)
 
     def mode_label(self) -> str:
         assert self.agent is not None
@@ -366,9 +392,14 @@ class TeiForgeApp(App[None]):
         return f"{model} · workspace: {agent.workspace.root.name or agent.workspace.root}"
 
     def mount_tree(self, root: Path) -> None:
-        box = self.query_one("#tree-box", Vertical)
-        box.remove_children()
-        box.mount(DirectoryTree(str(root), id="tree"))
+        # Reuse the tree: removing children is asynchronous, so mounting a new tree with
+        # the same id right after ``remove_children`` raises DuplicateIds.
+        existing = self.query("#tree").results(DirectoryTree)
+        tree = next(iter(existing), None)
+        if tree is None:
+            self.query_one("#tree-box", Vertical).mount(DirectoryTree(str(root), id="tree"))
+        elif Path(tree.path) != root:
+            tree.path = root
         self.query_one("#tree-title", Static).update(f"Workspace: {escape(root.name or str(root))}")
 
     # -- helpers ---------------------------------------------------------------------
@@ -428,13 +459,25 @@ class TeiForgeApp(App[None]):
         elif command == "tools":
             self.add_message("note", "```\n" + self.agent.get_tools_description() + "\n```")
         elif command == "memory":
-            self.add_message("note", "```\n" + self.agent.get_memory_summary() + "```")
+            self.add_message("note", self.memory_text())
         elif command == "clear":
             self.action_clear()
         elif command in {"setup", "model"}:
             self.action_setup()
         else:
             self.add_message("failed", f"Unknown command {text.split()[0]}. Type /help.")
+
+    def memory_text(self) -> str:
+        assert self.agent is not None
+        text = "```\n" + self.agent.get_memory_summary() + "```"
+        turns = [entry for entry in self.agent.memory.get() if entry.role in {"user", "assistant"}]
+        if turns:
+            lines = [
+                f"- **{'You' if entry.role == 'user' else 'TeiForge'}:** {_one_line(entry.content)}"
+                for entry in turns[-MEMORY_SHOWN:]
+            ]
+            text += f"\n\n**Last {len(lines)} messages**\n\n" + "\n".join(lines)
+        return text
 
     # -- running the agent ------------------------------------------------------------
 
