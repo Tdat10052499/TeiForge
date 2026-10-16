@@ -297,6 +297,49 @@ def test_normal_tool_calls_are_not_marked_recovered(tmp_path):
     assert "recovered" not in agent.run_detailed("read").tool_calls()[0].data
 
 
+BLAME = "It seems the tool call failed to extract relevant information from the file."
+
+
+def test_self_check_asks_again_when_the_answer_blames_a_working_tool(tmp_path):
+    (tmp_path / "notes.txt").write_text("Lan sends the report.", encoding="utf-8")
+    script = [{"tool": "file_reader", "args": {"path": "notes.txt"}}, BLAME, "Lan sends the report."]
+    agent, provider = make_llm_agent(tmp_path, script)
+
+    result = agent.run_detailed("Who sends the report?")
+
+    assert result.ok and result.output == "Lan sends the report." and result.steps == 3
+    check = next(e for e in result.events if e.type == "self_check")
+    assert check.data == {"step": 2, "answer": BLAME}
+    last_two = provider.requests[2]["messages"][-2:]
+    assert last_two[0] == {"role": "assistant", "content": BLAME}
+    assert last_two[1]["role"] == "user" and "Who sends the report?" in last_two[1]["content"]
+
+
+def test_self_check_runs_at_most_once(tmp_path):
+    (tmp_path / "notes.txt").write_text("x", encoding="utf-8")
+    script = [{"tool": "file_reader", "args": {"path": "notes.txt"}}, BLAME, BLAME]
+    agent, _ = make_llm_agent(tmp_path, script)
+    result = agent.run_detailed("Read notes.txt")
+    assert result.output == BLAME and len([e for e in result.events if e.type == "self_check"]) == 1
+
+
+@pytest.mark.parametrize(
+    ("script", "config"),
+    [
+        ([BLAME], {}),  # no tool was called
+        ([{"tool": "file_reader", "args": {"path": "missing.txt"}}, BLAME], {}),  # the tool did fail
+        ([{"tool": "file_reader", "args": {"path": "notes.txt"}}, "Notes say x."], {}),  # no blame
+        ([{"tool": "file_reader", "args": {"path": "notes.txt"}}, BLAME], {"self_check": False}),
+        ([{"tool": "file_reader", "args": {"path": "notes.txt"}}, BLAME], {"max_steps": 2}),  # no steps left
+    ],
+)
+def test_self_check_is_skipped(tmp_path, script, config):
+    (tmp_path / "notes.txt").write_text("x", encoding="utf-8")
+    agent, _ = make_llm_agent(tmp_path, script, **config)
+    result = agent.run_detailed("Read notes.txt")
+    assert result.output == script[-1] and not any(e.type == "self_check" for e in result.events)
+
+
 def test_llm_loop_reports_tool_errors_to_the_model(tmp_path):
     agent, provider = make_llm_agent(
         tmp_path,

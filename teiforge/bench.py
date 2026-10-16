@@ -17,7 +17,7 @@ import re
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 from .agent import Agent
 from .config import AgentConfig
@@ -227,6 +227,7 @@ class ScenarioReport:
     failures: List[Optional[str]] = field(default_factory=list)
     outputs: List[str] = field(default_factory=list)
     recovered: int = 0
+    self_checked: int = 0
 
     @property
     def runs(self) -> int:
@@ -253,6 +254,7 @@ class ScenarioReport:
             "ci95": [round(low, 3), round(high, 3)],
             "failures": self.failure_counts(),
             "recovered_runs": self.recovered,
+            "self_checked_runs": self.self_checked,
             "outputs": self.outputs,
         }
 
@@ -265,6 +267,7 @@ class BenchReport:
     model: str
     temperature: float
     recover_text_tool_calls: bool = True
+    self_check: bool = True
     scenarios: List[ScenarioReport] = field(default_factory=list)
 
     @property
@@ -282,6 +285,7 @@ class BenchReport:
             "model": self.model,
             "temperature": self.temperature,
             "recover_text_tool_calls": self.recover_text_tool_calls,
+            "self_check": self.self_check,
             "runs": self.runs,
             "passes": self.passes,
             "ci95": [round(low, 3), round(high, 3)],
@@ -291,7 +295,8 @@ class BenchReport:
     def format_table(self) -> str:
         lines = [
             f"Model: {self.provider} / {self.model}, temperature {self.temperature}, "
-            f"text tool-call recovery {'on' if self.recover_text_tool_calls else 'off'}",
+            f"text tool-call recovery {'on' if self.recover_text_tool_calls else 'off'}, "
+            f"self-check {'on' if self.self_check else 'off'}",
             "",
             f"{'scenario':<14} {'passed':>8} {'95% CI':>12}  failures",
         ]
@@ -300,6 +305,8 @@ class BenchReport:
             notes = [f"{name} x{count}" for name, count in item.failure_counts().items()]
             if item.recovered:
                 notes.append(f"(recovered text calls in {item.recovered} run(s))")
+            if item.self_checked:
+                notes.append(f"(self-check in {item.self_checked} run(s))")
             failures = ", ".join(notes)
             lines.append(
                 f"{item.name:<14} {f'{item.passes}/{item.runs}':>8} "
@@ -327,11 +334,12 @@ def _prepare(scenario: Scenario, root: Path) -> Path:
 
 def run_scenario(
     scenario: Scenario, config: AgentConfig, provider: Optional[LLMProvider] = None
-) -> Tuple[Optional[str], str, bool]:
+) -> Tuple[Optional[str], str, Set[str]]:
     """Run ``scenario`` once in a fresh temporary workspace.
 
-    Returns the failure reason (``None`` for a pass), the answer, and whether a tool call
-    written as text was recovered during the run.
+    Returns the failure reason (``None`` for a pass), the answer, and which aids changed the
+    run: ``"recovered"`` (a tool call written as text was run) and ``"self_check"`` (the model
+    was asked to answer again).
     """
     with tempfile.TemporaryDirectory(prefix="teiforge-bench-") as tmp:
         workspace = _prepare(scenario, Path(tmp))
@@ -344,9 +352,13 @@ def run_scenario(
         try:
             result = agent.run_detailed(scenario.task)
         except LLMError as exc:  # pragma: no cover - run_detailed already converts these
-            return "error", f"Error: {exc}", False
-        recovered = any(event.data.get("recovered") for event in result.tool_calls())
-        return scenario.check(result), result.output, recovered
+            return "error", f"Error: {exc}", set()
+        aids = set()
+        if any(event.data.get("recovered") for event in result.tool_calls()):
+            aids.add("recovered")
+        if any(event.type == "self_check" for event in result.events):
+            aids.add("self_check")
+        return scenario.check(result), result.output, aids
 
 
 def run_bench(
@@ -377,13 +389,15 @@ def run_bench(
         model=str(getattr(provider, "model", config.model)),
         temperature=config.temperature,
         recover_text_tool_calls=config.recover_text_tool_calls,
+        self_check=config.self_check,
     )
     for scenario in scenarios:
         item = ScenarioReport(name=scenario.name, description=scenario.description)
         for _ in range(runs):
             run_provider = provider_factory(config) if provider_factory else provider
-            reason, output, recovered = run_scenario(scenario, config, run_provider)
-            item.recovered += int(recovered)
+            reason, output, aids = run_scenario(scenario, config, run_provider)
+            item.recovered += int("recovered" in aids)
+            item.self_checked += int("self_check" in aids)
             item.failures.append(reason)
             item.outputs.append(output)
             if progress is not None:

@@ -18,6 +18,12 @@ Notable changes to TeiForge are documented here. The format follows
   `tool_call` event carries `"recovered": true`. Controlled by the new
   `AgentConfig.recover_text_tool_calls` (default `True`) and `teiforge bench --no-recovery`.
   Text that only mentions a tool, or names a tool the agent does not have, is never run.
+- Self-check: when every tool call in a run succeeded but the model's answer claims that a tool
+  failed (for example "the tool call failed to extract relevant information"), the agent asks the
+  model once to answer again from the tool results. A new `self_check` event records the first
+  answer. Controlled by `AgentConfig.self_check` (default `True`) and `teiforge bench --no-self-check`.
+  The check is a phrase match, so an answer that quotes a failure from the data itself can trigger
+  one extra model call.
 
 ## 0.3.1 - 2026-10-14
 

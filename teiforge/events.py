@@ -11,9 +11,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Literal
 
-EventType = Literal["task_start", "llm_response", "tool_call", "tool_result", "final", "error"]
+EventType = Literal["task_start", "llm_response", "tool_call", "tool_result", "self_check", "final", "error"]
 
-EVENT_TYPES = ("task_start", "llm_response", "tool_call", "tool_result", "final", "error")
+EVENT_TYPES = ("task_start", "llm_response", "tool_call", "tool_result", "self_check", "final", "error")
 
 
 def _now() -> datetime:

@@ -131,7 +131,10 @@ teiforge run "Read ../secret.txt" --agent files --workspace notes --no-llm
 misread a tool result or write a tool call as plain text instead of calling the tool. TeiForge
 recognises a reply that is only a tool call written as text (JSON, a code block or `<tool_call>`
 tags naming one of the agent's tools) and runs it; the `tool_call` event then has
-`"recovered": true`. Turn this off with `AgentConfig(..., recover_text_tool_calls=False)`. A
+`"recovered": true`. When every tool call worked but the answer still claims a tool failed (for
+example "the tool call failed to extract relevant information"), the agent asks the model once to
+answer again from the results and emits a `self_check` event. Turn these off with
+`AgentConfig(..., recover_text_tool_calls=False, self_check=False)`. A
 temperature of `0` makes them more consistent; if an answer looks wrong, run it again or try a
 larger model. In Python, pass
 `AgentConfig(..., temperature=0)`; for the CLI, put it in a config file (see [CLI](#cli)).
@@ -185,7 +188,7 @@ result.tool_calls() # the tool_call events
 result.to_dict()    # JSON-serialisable record of the whole run
 ```
 
-Event types: `task_start`, `llm_response`, `tool_call`, `tool_result`, `final`, `error`.
+Event types: `task_start`, `llm_response`, `tool_call`, `tool_result`, `self_check`, `final`, `error`.
 
 ### LLM providers
 
@@ -217,7 +220,7 @@ teiforge bench --runs 10                 # all scenarios, 10 runs each
 teiforge bench --list                    # scenarios and failure reasons
 teiforge bench --scenario custom_tool --temperature 0 --json
 teiforge bench --runs 10 --out bench.json   # table on screen, full report with answers in a file
-teiforge bench --runs 10 --no-recovery     # the same without recovering text tool calls
+teiforge bench --runs 10 --no-recovery --no-self-check   # the same without the small-model aids
 ```
 
 ```text

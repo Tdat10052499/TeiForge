@@ -22,6 +22,8 @@ class AgentConfig:
     configured, otherwise the keyword router), ``"llm"`` or ``"router"``.
     ``recover_text_tool_calls`` runs tool calls that the model wrote as plain text instead
     of through the tool-calling interface (see :func:`teiforge.llm.parse_text_tool_calls`).
+    ``self_check`` asks the model once to answer again when every tool call succeeded but
+    its answer claims that a tool failed.
     """
 
     name: str
@@ -37,6 +39,7 @@ class AgentConfig:
     workspace: Optional[str] = None
     mode: str = "auto"
     recover_text_tool_calls: bool = True
+    self_check: bool = True
 
     def __post_init__(self) -> None:
         if not self.name.strip():
