@@ -15,6 +15,7 @@ from .llm import (
     LLMError,
     LLMProvider,
     Message,
+    ToolCall,
     parse_text_tool_calls,
     provider_from_config,
 )
@@ -94,6 +95,11 @@ _PATH_TOKEN = re.compile(r"""(?:[A-Za-z]:[\\/])?[\w.~\\/-]*[\w-]\.[A-Za-z][A-Za-
 
 ToolLike = Union[Tool, Callable[..., Any]]
 
+#: Decides whether a tool call may run; see the ``approver`` argument of :class:`Agent`.
+Approver = Callable[[ToolCall], bool]
+
+DECLINED_MESSAGE = "The user declined to run this tool. Do not try it again; answer without it."
+
 
 def _keyword_pattern(keywords: Iterable[str]) -> re.Pattern[str]:
     alternatives = "|".join(re.escape(word).replace(r"\ ", r"\s+") for word in keywords)
@@ -133,7 +139,13 @@ class Agent:
         provider: Optional[LLMProvider] = None,
         workspace: Union[str, os.PathLike[str], Workspace, None] = None,
         tools: Optional[Iterable[ToolLike]] = None,
+        approver: Optional[Approver] = None,
     ) -> None:
+        """Create an agent.
+
+        ``approver``, when given, is called with every :class:`~teiforge.llm.ToolCall` before
+        the tool runs; returning ``False`` skips the tool and tells the model the user declined.
+        """
         if config is not None and name is not None:
             raise ValueError("Pass either name/model or config, not both.")
         if config is None:
@@ -149,6 +161,7 @@ class Agent:
         self.memory = Memory(max_entries=config.memory_size)
         self.task_count = 0
         self.enable_llm: bool = True
+        self.approver: Optional[Approver] = approver
 
         workspace = workspace if workspace is not None else config.workspace
         if isinstance(workspace, Workspace):
@@ -357,11 +370,23 @@ class Agent:
                 extra = {"recovered": True} if recovered else {}
                 emit("tool_call", step=step, id=call.id, name=call.name, arguments=call.arguments, **extra)
                 selected = self.tools.get(call.name)
+                declined = False
                 if selected is None:
                     result = ToolResult(ok=False, error=f"Unknown tool '{call.name}'.")
+                elif not self._approved(call):
+                    declined = True
+                    result = ToolResult(ok=False, error=DECLINED_MESSAGE)
                 else:
                     result = selected.run(call.arguments)
-                emit("tool_result", step=step, id=call.id, name=call.name, ok=result.ok, output=result.text)
+                emit(
+                    "tool_result",
+                    step=step,
+                    id=call.id,
+                    name=call.name,
+                    ok=result.ok,
+                    output=result.text,
+                    **({"declined": True} if declined else {}),
+                )
                 tool_results.append(result.ok)
                 messages.append(
                     {
@@ -406,6 +431,10 @@ class Agent:
             return f"Error: {exc}", False
 
         emit("tool_call", step=1, id="router", name=tool_name, arguments=arguments)
+        call_arguments = arguments if isinstance(arguments, dict) else {"input": arguments}
+        if not self._approved(ToolCall(id="router", name=tool_name, arguments=call_arguments)):
+            emit("tool_result", step=1, id="router", name=tool_name, ok=False, output="", declined=True)
+            return "Error: The user declined to run this tool.", False
         result = selected.run(arguments)
         emit("tool_result", step=1, id="router", name=tool_name, ok=result.ok, output=result.text)
         if not result.ok:
@@ -457,6 +486,9 @@ class Agent:
         if len(required) == 1:
             return {required[0]: text}
         raise ToolError(f"The router cannot build arguments for tool '{tool_name}'.")
+
+    def _approved(self, call: ToolCall) -> bool:
+        return self.approver is None or bool(self.approver(call))
 
     def _exists_in_workspace(self, path: str) -> bool:
         try:
@@ -583,4 +615,12 @@ class Agent:
         return self.__str__()
 
 
-__all__ = ["Agent", "DEFAULT_SYSTEM_PROMPT", "ROUTER_RULES", "build_system_prompt", "extract_path"]
+__all__ = [
+    "Agent",
+    "Approver",
+    "DECLINED_MESSAGE",
+    "DEFAULT_SYSTEM_PROMPT",
+    "ROUTER_RULES",
+    "build_system_prompt",
+    "extract_path",
+]
