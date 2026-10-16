@@ -9,7 +9,7 @@ import pytest
 
 pytest.importorskip("textual")
 
-from textual.widgets import Input, Markdown, RichLog, Select, Static  # noqa: E402
+from textual.widgets import Button, Input, Markdown, RichLog, Select, Static  # noqa: E402
 
 import teiforge.tui as tui_package  # noqa: E402
 import teiforge.tui.app as tui_app  # noqa: E402
@@ -379,13 +379,15 @@ def test_setup_other_providers_and_messages(home, workspace, monkeypatch):
             assert "Choose an Ollama model" in str(status.render())
 
             screen.query_one("#provider", Select).value = "openai"
-            await pilot.pause()
             name = screen.query_one("#model-name", Input)
-            assert name.display and name.value == "gpt-4o-mini"
+            assert await wait_until(pilot, lambda: name.display)
+            assert name.value == "gpt-4o-mini"
             screen.query_one("#workspace", Input).value = str(workspace / "new" / "folder")
             screen.query_one("#provider", Select).value = "none"
-            await pilot.pause()
-            await pilot.click("#save")
+            # Wait for the layout to settle, then press directly: a click by screen
+            # position can miss while hidden fields move the button.
+            assert await wait_until(pilot, lambda: not name.display)
+            screen.query_one("#save", Button).press()
             assert await wait_until(pilot, lambda: not isinstance(app.screen, SetupScreen))
             assert (workspace / "new" / "folder").is_dir()
             assert "keyword router" in app.sub_title
