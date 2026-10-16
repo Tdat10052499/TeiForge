@@ -244,7 +244,10 @@ def cmd_bench(args: argparse.Namespace) -> int:
         return 0
     selected = [item for item in SCENARIOS if not args.scenario or item.name in args.scenario]
     config = AgentConfig(
-        name="bench-agent", temperature=args.temperature, recover_text_tool_calls=not args.no_recovery
+        name="bench-agent",
+        temperature=args.temperature,
+        recover_text_tool_calls=not args.no_recovery,
+        self_check=not args.no_self_check,
     )
     if args.provider:
         config.provider = args.provider
@@ -329,6 +332,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-recovery",
         action="store_true",
         help="Do not run tool calls that the model wrote as text (to compare with the default).",
+    )
+    bench.add_argument(
+        "--no-self-check",
+        action="store_true",
+        help="Do not ask the model to answer again when it wrongly blames a tool.",
     )
     bench.add_argument("--out", default=None, help="Also save the full JSON report to this file.")
     bench.add_argument("--list", action="store_true", help="List the scenarios and failure reasons.")

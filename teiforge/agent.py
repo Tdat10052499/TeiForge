@@ -63,6 +63,19 @@ NO_LLM_WARNING = (
     "See " + QUICKSTART_URL
 )
 
+#: An answer that blames a tool, e.g. "the tool call failed to extract relevant information".
+_FAILURE_CLAIM = re.compile(
+    r"\b(?:tools?|(?:tool |function )?calls?|\w+_(?:reader|writer|search|runner))\b[^.!?\n]{0,60}?"
+    r"\b(?:fail(?:ed|s|ure)?|could(?:n't| not)|unable|not able|did(?:n't| not) work)\b"
+    r"|\b(?:fail(?:ed|s)? to|unable to|could(?:n't| not)|not able to)\s+(?:read|extract|find|access|open)\b",
+    flags=re.IGNORECASE,
+)
+
+SELF_CHECK_PROMPT = (
+    "Your answer says that a tool failed, but every tool call above succeeded and its result is "
+    "shown above. Read those results again and answer the original task using them: {task}"
+)
+
 SUMMARY_PROMPT = "You are a concise assistant that summarizes the content of web search results."
 
 #: Router rules, checked in order. Keywords match whole words only.
@@ -301,6 +314,8 @@ class Agent:
         messages.extend(self.memory.to_messages(limit=20))
         messages.append({"role": "user", "content": task})
         tool_list = list(self.tools.values())
+        tool_results: List[bool] = []
+        checked = False
 
         for step in range(1, self.config.max_steps + 1):
             response = provider.complete(messages, tool_list)
@@ -322,6 +337,19 @@ class Agent:
                 answer = content.strip()
                 if not answer:
                     return "Error: The model returned an empty answer.", False, step
+                if (
+                    self.config.self_check
+                    and not checked
+                    and step < self.config.max_steps
+                    and tool_results
+                    and all(tool_results)
+                    and _FAILURE_CLAIM.search(answer)
+                ):
+                    checked = True
+                    emit("self_check", step=step, answer=answer)
+                    messages.append({"role": "assistant", "content": answer})
+                    messages.append({"role": "user", "content": SELF_CHECK_PROMPT.format(task=task)})
+                    continue
                 return answer, True, step
 
             messages.append({"role": "assistant", "content": content, "tool_calls": calls})
@@ -334,6 +362,7 @@ class Agent:
                 else:
                     result = selected.run(call.arguments)
                 emit("tool_result", step=step, id=call.id, name=call.name, ok=result.ok, output=result.text)
+                tool_results.append(result.ok)
                 messages.append(
                     {
                         "role": "tool",

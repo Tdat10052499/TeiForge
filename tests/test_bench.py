@@ -41,7 +41,7 @@ def test_file_scenarios_read_the_prepared_file():
     assert reason is None and "Minh" in output
     reason, _, _ = run(
         "action_items",
-        [{"tool": "file_reader", "args": {"path": "meeting.txt"}}, "The tool failed to read the file."],
+        [{"tool": "file_reader", "args": {"path": "meeting.txt"}}, "There are no action items in the file."],
     )
     assert reason == "wrong_answer"
 
@@ -55,8 +55,21 @@ def test_missing_tool_call_is_classified():
 
 def test_recovered_text_tool_calls_pass_and_are_counted():
     text_call = '{"name": "file_reader", "parameters": {"path": "meeting.txt"}}'
-    reason, output, recovered = run("read_summary", [text_call, "Lan sends the report; Minh does slides."])
-    assert reason is None and recovered and "Minh" in output
+    reason, output, aids = run("read_summary", [text_call, "Lan sends the report; Minh does slides."])
+    assert reason is None and aids == {"recovered"} and "Minh" in output
+
+
+def test_self_check_is_counted_and_can_fix_the_answer():
+    script = [
+        {"tool": "file_reader", "args": {"path": "meeting.txt"}},
+        "The tool call failed to extract the action items.",
+        "Lan: budget report. Minh: demo slides.",
+    ]
+    reason, _, aids = run("action_items", script)
+    assert reason is None and aids == {"self_check"}
+    no_check = AgentConfig(name="bench-agent", self_check=False)
+    reason, output, aids = run("action_items", script[:2], no_check)
+    assert reason == "wrong_answer" and aids == set()
 
 
 def test_custom_tool_scenario_checks_the_number():
@@ -137,8 +150,9 @@ def test_run_bench_reports_counts():
     assert data["scenarios"][1]["failures"] == {"wrong_answer": 2}
     assert progress[0] == ("answer_only", None)
     report.scenarios[0].recovered = 1
+    report.scenarios[0].self_checked = 2
     table = report.format_table()
-    assert "recovered text calls in 1 run(s)" in table
+    assert "recovered text calls in 1 run(s)" in table and "self-check in 2 run(s)" in table
     assert "answer_only" in table and "2/2" in table and "wrong_answer x2" in table
 
 
@@ -169,6 +183,7 @@ def test_bench_cli(monkeypatch, capsys):
             model=config.model,
             temperature=config.temperature,
             recover_text_tool_calls=config.recover_text_tool_calls,
+            self_check=config.self_check,
         )
 
     monkeypatch.setattr("teiforge.cli.run_bench", fake_run_bench)
@@ -185,6 +200,6 @@ def test_bench_cli(monkeypatch, capsys):
     assert "Full report saved to report.json" in capsys.readouterr().out
     with open("report.json", encoding="utf-8") as handle:
         assert json.load(handle)["provider"] == "openai"
-    assert main([*args, "--no-recovery"]) == 0
-    assert seen["config"].recover_text_tool_calls is False
-    assert "recovery off" in capsys.readouterr().out
+    assert main([*args, "--no-recovery", "--no-self-check"]) == 0
+    assert seen["config"].recover_text_tool_calls is False and seen["config"].self_check is False
+    assert "recovery off, self-check off" in capsys.readouterr().out
