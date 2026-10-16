@@ -6,6 +6,13 @@ Notable changes to TeiForge are documented here. The format follows
 
 ## Unreleased
 
+### Added
+
+- `teiforge bench` and `teiforge.bench.run_bench()`: six fixed scenarios (direct answer, reading
+  a file, extracting action items, a custom `@tool`, the workspace sandbox and chat history) run
+  several times against the configured model. The report gives the pass rate with a 95% Wilson
+  interval and classifies each failure (`text_tool_call`, `no_tool_call`, `wrong_answer`, ...).
+
 ## 0.3.1 - 2026-10-14
 
 Fixes found by installing 0.3.0 from PyPI and following the README on Windows with Ollama.

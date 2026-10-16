@@ -10,6 +10,7 @@ from typing import Callable, List, Optional, Sequence, TextIO
 
 from ._version import __version__
 from .agent import Agent
+from .bench import FAILURE_REASONS, SCENARIO_NAMES, SCENARIOS, run_bench
 from .config import AgentConfig
 from .events import Event
 from .llm import LLMError
@@ -30,6 +31,7 @@ examples:
   teiforge search "AI agent libraries" --out results.txt --no-llm
   teiforge chat --agent all --memory chat.json
   teiforge tools
+  teiforge bench --runs 10
 """
 
 
@@ -232,6 +234,42 @@ def cmd_tools(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_bench(args: argparse.Namespace) -> int:
+    if args.list:
+        for scenario in SCENARIOS:
+            print(f"{scenario.name:<14} {scenario.description}")
+        print("\nFailure reasons:")
+        for reason, meaning in FAILURE_REASONS.items():
+            print(f"  {reason:<19} {meaning}")
+        return 0
+    selected = [item for item in SCENARIOS if not args.scenario or item.name in args.scenario]
+    config = AgentConfig(name="bench-agent", temperature=args.temperature)
+    if args.provider:
+        config.provider = args.provider
+    if args.model:
+        config.model = args.model
+    if args.base_url:
+        config.base_url = args.base_url
+    config.__post_init__()
+
+    def progress(_: str, reason: Optional[str]) -> None:
+        print("." if reason is None else "F", end="", file=sys.stderr, flush=True)
+
+    print(f"Running {len(selected)} scenario(s) x {args.runs} run(s)...", file=sys.stderr)
+    report = run_bench(config, runs=args.runs, scenarios=selected, progress=progress)
+    print(file=sys.stderr)
+    full_report = json.dumps(report.to_dict(), ensure_ascii=False, indent=2)
+    if args.out:
+        Path(args.out).write_text(full_report, encoding="utf-8")
+    if args.json:
+        print(full_report)
+    else:
+        print(report.format_table())
+        if args.out:
+            print(f"Full report saved to {args.out}")
+    return 0
+
+
 def cmd_version(_: argparse.Namespace) -> int:
     print(f"teiforge {__version__}")
     return 0
@@ -275,6 +313,22 @@ def build_parser() -> argparse.ArgumentParser:
     tools_parser = commands.add_parser("tools", help="List the built-in tools.")
     tools_parser.add_argument("--json", action="store_true", help="Print the tool schemas as JSON.")
     tools_parser.set_defaults(handler=cmd_tools)
+
+    bench = commands.add_parser(
+        "bench", help="Measure how reliably the configured model drives an agent (uses the LLM)."
+    )
+    bench.add_argument("--runs", type=int, default=5, help="Runs per scenario (default: 5).")
+    bench.add_argument(
+        "--scenario", action="append", choices=SCENARIO_NAMES, help="Only run this scenario (repeatable)."
+    )
+    bench.add_argument("--temperature", type=float, default=0.7, help="Model temperature (default: 0.7).")
+    bench.add_argument("--json", action="store_true", help="Print the full report, with answers, as JSON.")
+    bench.add_argument("--out", default=None, help="Also save the full JSON report to this file.")
+    bench.add_argument("--list", action="store_true", help="List the scenarios and failure reasons.")
+    bench.add_argument("--provider", choices=["openai", "anthropic"], default=None)
+    bench.add_argument("--model", default=None)
+    bench.add_argument("--base-url", default=None)
+    bench.set_defaults(handler=cmd_bench)
 
     version = commands.add_parser("version", help="Print the version.")
     version.set_defaults(handler=cmd_version)
