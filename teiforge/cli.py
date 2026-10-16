@@ -26,6 +26,7 @@ LEGACY_PRESETS = {"research": "research", "file-analyzer": "files", "workflow": 
 
 EPILOG = """\
 examples:
+  teiforge                         # full-screen terminal UI (pip install "teiforge[tui]")
   teiforge run "Search for open-source Python agent frameworks"
   teiforge run "read:README.md" --agent files
   teiforge search "AI agent libraries" --out results.txt --no-llm
@@ -275,6 +276,16 @@ def cmd_bench(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ui(_: argparse.Namespace) -> int:
+    from .tui import run_tui
+
+    return run_tui()
+
+
+def _interactive() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
 def cmd_version(_: argparse.Namespace) -> int:
     print(f"teiforge {__version__}")
     return 0
@@ -345,6 +356,9 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--base-url", default=None)
     bench.set_defaults(handler=cmd_bench)
 
+    ui = commands.add_parser("ui", help="Open the full-screen terminal UI (needs teiforge[tui]).")
+    ui.set_defaults(handler=cmd_ui)
+
     version = commands.add_parser("version", help="Print the version.")
     version.set_defaults(handler=cmd_version)
     return parser
@@ -376,6 +390,12 @@ def _translate_legacy(argv: List[str]) -> List[str]:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
+    if not arguments and _interactive():
+        from .tui import INSTALL_HINT, run_tui, textual_available
+
+        if textual_available():
+            return run_tui()
+        print(INSTALL_HINT + "\n")
     if "--task" in arguments:
         arguments = _translate_legacy(arguments)
 

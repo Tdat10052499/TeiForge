@@ -67,6 +67,42 @@ teiforge chat --agent files --workspace notes --memory chat.json
 Type `/help` inside the chat for commands. The conversation is saved to `chat.json` and picked
 up again next time.
 
+## The terminal UI: the easiest way to start
+
+```shell
+python -m pip install "teiforge[tui,openai]"
+ollama pull llama3.1          # a free local model, see https://ollama.com/download
+teiforge
+```
+
+The first time, a setup screen finds Ollama, lets you pick a model and the folder the agent may
+use, checks that the model answers, and saves the choice to `~/.teiforge/config.toml` (API keys
+are never written there). After that, `teiforge` opens straight into the chat:
+
+```text
+ TeiForge - llama3.1 (openai) · workspace: notes
+┌──────────────────────────────────────┬ Steps ────────────────────────────┐
+│ You  Summarise meeting.txt           │ 08:34:18 ▶ Summarise meeting.txt  │
+│   • Lan sends the budget by Friday   │ 08:34:18   ▸ file_reader          │
+│   • Minh prepares the demo slides    │ 08:34:18     ✓ ok · 148 chars     │
+│                                      │ 08:34:19 ■ done                   │
+│                                      ├ Workspace: notes ─────────────────┤
+│ > Ask TeiForge...                    │ 📂 notes                           │
+│                                      │    meeting.txt                    │
+└──────────────────────────────────────┴───────────────────────────────────┘
+ ^q Quit  esc Stop waiting  f2 Setup  ^l Clear
+```
+
+- **Steps** shows what the agent does: each model reply, tool call and result.
+- Before the agent **writes a file or runs a command**, a dialog asks you: allow once, allow for
+  this session, or deny.
+- The conversation is kept in `~/.teiforge/chat.json` between sessions; `/clear` forgets it.
+- Type `/help` for commands. `F2` (or `/setup`) changes the model or folder.
+
+Use Windows Terminal, macOS Terminal or any modern terminal; the old Windows console window draws
+the boxes poorly. If Windows blocks `teiforge.exe` ("An Application Control policy has blocked
+this file"), run `python -m teiforge` instead.
+
 ## Quickstart: free, on your own machine (5 minutes)
 
 **1. Install TeiForge and a local model**
@@ -241,6 +277,7 @@ teiforge run "Read README.md and list the features" --agent files --workspace .
 teiforge run "search: python 3.13 release" --json          # full result with events
 teiforge search "AI agent libraries" --out results.txt --no-llm
 teiforge chat --agent all --memory chat.json             # interactive; type /help
+teiforge ui                                              # full-screen terminal UI (teiforge[tui])
 teiforge tools                                           # list tools and parameters
 teiforge bench --runs 10                                 # measure the configured model
 ```

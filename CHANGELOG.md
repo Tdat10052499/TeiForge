@@ -8,6 +8,21 @@ Notable changes to TeiForge are documented here. The format follows
 
 ### Added
 
+- Full-screen terminal UI built with Textual (optional extra: `pip install "teiforge[tui]"`).
+  Running `teiforge` with no command in a terminal opens it; `teiforge ui` does the same. It has a
+  chat pane with Markdown answers, a live **Steps** pane fed by the event stream, the workspace
+  folder tree, a first-run setup screen that finds Ollama models and tests the model before saving,
+  and a dialog that asks before `file_writer` or `command_runner` runs. `Esc` stops waiting for the
+  model, and the conversation is kept between sessions. When stdin or stdout is not a terminal,
+  `teiforge` still prints the help as before.
+- Per-user settings in `~/.teiforge/config.toml` (or `$TEIFORGE_HOME`), read and written by the
+  terminal UI: `teiforge.userconfig.load_user_config()` and `save_user_config()`. API keys are
+  never stored there.
+- `Agent(..., approver=fn)`: `fn(ToolCall) -> bool` is called before every tool runs, in the LLM
+  loop and in the keyword router. A declined call is not run, the model is told the user declined,
+  and the `tool_result` event has `"declined": true`.
+- `teiforge.llm.list_ollama_models()` lists the models an Ollama server has pulled.
+
 - `teiforge bench` and `teiforge.bench.run_bench()`: six fixed scenarios (direct answer, reading
   a file, extracting action items, a custom `@tool`, the workspace sandbox and chat history) run
   several times against the configured model. The report gives the pass rate with a 95% Wilson
