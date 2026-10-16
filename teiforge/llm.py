@@ -366,6 +366,32 @@ class AnthropicProvider:
 # -- discovery ----------------------------------------------------------------------------
 
 
+OLLAMA_BASE_URL = "http://127.0.0.1:11434/v1"
+
+
+def list_ollama_models(base_url: str = OLLAMA_BASE_URL, timeout: float = 2.0) -> Optional[List[str]]:
+    """Return the names of the models an Ollama server has pulled.
+
+    ``base_url`` is the OpenAI-compatible URL (``.../v1``) or the server root. Returns
+    ``None`` when no Ollama server answers there, and an empty list when it has no models.
+    """
+    import requests
+
+    root = base_url.rstrip("/")
+    if root.endswith("/v1"):
+        root = root[: -len("/v1")]
+    try:
+        response = requests.get(f"{root}/api/tags", timeout=timeout)
+        response.raise_for_status()
+        data = response.json()
+    except (requests.RequestException, ValueError):
+        return None
+    models = data.get("models") if isinstance(data, dict) else None
+    if not isinstance(models, list):
+        return None
+    return [str(item["name"]) for item in models if isinstance(item, dict) and item.get("name")]
+
+
 def _package_available(module: str) -> bool:
     try:
         __import__(module)
@@ -418,9 +444,11 @@ __all__ = [
     "Message",
     "OpenAIProvider",
     "ToolCall",
+    "list_ollama_models",
     "parse_text_tool_calls",
     "provider_from_config",
     "DEFAULT_ANTHROPIC_MODEL",
+    "OLLAMA_BASE_URL",
     "PROVIDER_ENV_VAR",
     "MODEL_ENV_VAR",
     "BASE_URL_ENV_VAR",
