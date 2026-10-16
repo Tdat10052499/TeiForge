@@ -15,7 +15,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Protocol, Sequence, runtime_checkable
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Protocol, Sequence, Tuple, runtime_checkable
 
 if TYPE_CHECKING:  # pragma: no cover
     from .config import AgentConfig
@@ -76,6 +76,82 @@ def _parse_arguments(raw: Any) -> Dict[str, Any]:
     if not isinstance(parsed, dict):
         raise LLMError(f"Model returned tool arguments that are not an object: {raw!r}")
     return parsed
+
+
+_TAGGED_CALL = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", flags=re.DOTALL)
+_FENCED = re.compile(r"^```[A-Za-z]*\s*(.*?)\s*```$", flags=re.DOTALL)
+
+
+def _json_values(text: str) -> Optional[List[Any]]:
+    """Parse ``text`` as one JSON value, or as one JSON value per non-empty line."""
+    try:
+        return [json.loads(text)]
+    except ValueError:
+        pass
+    values = []
+    for line in text.splitlines():
+        line = line.strip().rstrip(";")
+        if not line:
+            continue
+        try:
+            values.append(json.loads(line))
+        except ValueError:
+            return None
+    return values or None
+
+
+def _text_call(item: Any) -> Optional[Tuple[str, Dict[str, Any]]]:
+    if not isinstance(item, dict):
+        return None
+    if isinstance(item.get("function"), dict):
+        item = item["function"]
+    name = item.get("name")
+    arguments = item.get("arguments", item.get("parameters", {}))
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments) if arguments.strip() else {}
+        except ValueError:
+            return None
+    if not isinstance(name, str) or not isinstance(arguments, dict):
+        return None
+    return name, arguments
+
+
+def parse_text_tool_calls(content: Optional[str], tool_names: Sequence[str]) -> List[ToolCall]:
+    """Recover tool calls that a model wrote as text instead of using the tool interface.
+
+    Small local models sometimes answer with ``{"name": "file_reader", "parameters": {...}}``
+    as plain text. The whole reply must be such a call (bare JSON, a fenced code block,
+    ``<tool_call>`` tags or one call per line) and every call must name a tool in
+    ``tool_names``; otherwise nothing is recovered, so a tool merely mentioned in prose is
+    never run.
+    """
+    if not content or not tool_names:
+        return []
+    text = content.strip()
+    if text.startswith("<|python_tag|>"):
+        text = text[len("<|python_tag|>") :].strip()
+    tagged = _TAGGED_CALL.findall(text)
+    if tagged:
+        if _TAGGED_CALL.sub("", text).strip():
+            return []
+        bodies = tagged
+    else:
+        fenced = _FENCED.match(text)
+        bodies = [fenced.group(1) if fenced else text]
+
+    calls: List[ToolCall] = []
+    for body in bodies:
+        values = _json_values(body)
+        if values is None:
+            return []
+        for value in values:
+            for item in value if isinstance(value, list) else [value]:
+                parsed = _text_call(item)
+                if parsed is None or parsed[0] not in tool_names:
+                    return []
+                calls.append(ToolCall(id=f"text_call_{len(calls) + 1}", name=parsed[0], arguments=parsed[1]))
+    return calls
 
 
 # -- OpenAI and compatible APIs ------------------------------------------------------
@@ -342,6 +418,7 @@ __all__ = [
     "Message",
     "OpenAIProvider",
     "ToolCall",
+    "parse_text_tool_calls",
     "provider_from_config",
     "DEFAULT_ANTHROPIC_MODEL",
     "PROVIDER_ENV_VAR",

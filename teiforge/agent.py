@@ -9,7 +9,15 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tupl
 
 from .config import AgentConfig
 from .events import Event, EventHandler, EventType, RunResult
-from .llm import MODEL_ENV_VAR, PROVIDER_ENV_VAR, LLMError, LLMProvider, Message, provider_from_config
+from .llm import (
+    MODEL_ENV_VAR,
+    PROVIDER_ENV_VAR,
+    LLMError,
+    LLMProvider,
+    Message,
+    parse_text_tool_calls,
+    provider_from_config,
+)
 from .memory import Memory
 from .tools import Tool, ToolError, ToolResult, builtin_tools, parse_write_command, tool
 from .workspace import Workspace
@@ -302,17 +310,24 @@ class Agent:
                 content=response.content,
                 tool_calls=[call.name for call in response.tool_calls],
             )
-            if not response.tool_calls:
-                answer = (response.content or "").strip()
+            calls = response.tool_calls
+            content = response.content or ""
+            recovered = False
+            if not calls and self.config.recover_text_tool_calls:
+                calls = parse_text_tool_calls(content, list(self.tools))
+                if calls:
+                    # The text was the call itself; keeping it would show the model its own mistake.
+                    recovered, content = True, ""
+            if not calls:
+                answer = content.strip()
                 if not answer:
                     return "Error: The model returned an empty answer.", False, step
                 return answer, True, step
 
-            messages.append(
-                {"role": "assistant", "content": response.content or "", "tool_calls": response.tool_calls}
-            )
-            for call in response.tool_calls:
-                emit("tool_call", step=step, id=call.id, name=call.name, arguments=call.arguments)
+            messages.append({"role": "assistant", "content": content, "tool_calls": calls})
+            for call in calls:
+                extra = {"recovered": True} if recovered else {}
+                emit("tool_call", step=step, id=call.id, name=call.name, arguments=call.arguments, **extra)
                 selected = self.tools.get(call.name)
                 if selected is None:
                     result = ToolResult(ok=False, error=f"Unknown tool '{call.name}'.")

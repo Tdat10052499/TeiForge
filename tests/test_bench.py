@@ -21,8 +21,8 @@ SCENARIO = {scenario.name: scenario for scenario in SCENARIOS}
 CONFIG = AgentConfig(name="bench-agent")
 
 
-def run(name, script):
-    return run_scenario(SCENARIO[name], CONFIG, ScriptedProvider(script))
+def run(name, script, config=CONFIG):
+    return run_scenario(SCENARIO[name], config, ScriptedProvider(script))
 
 
 def test_answer_only_passes_and_flags_unneeded_tool():
@@ -34,12 +34,12 @@ def test_answer_only_passes_and_flags_unneeded_tool():
 
 
 def test_file_scenarios_read_the_prepared_file():
-    reason, output = run(
+    reason, output, _ = run(
         "action_items",
         [{"tool": "file_reader", "args": {"path": "meeting.txt"}}, "Lan: budget report. Minh: demo slides."],
     )
     assert reason is None and "Minh" in output
-    reason, _ = run(
+    reason, _, _ = run(
         "action_items",
         [{"tool": "file_reader", "args": {"path": "meeting.txt"}}, "The tool failed to read the file."],
     )
@@ -49,7 +49,14 @@ def test_file_scenarios_read_the_prepared_file():
 def test_missing_tool_call_is_classified():
     assert run("read_summary", ["Lan and Minh had a meeting."])[0] == "no_tool_call"
     text_call = '{"name": "file_reader", "parameters": {"path": "meeting.txt"}}'
-    assert run("read_summary", [text_call])[0] == "text_tool_call"
+    no_recovery = AgentConfig(name="bench-agent", recover_text_tool_calls=False)
+    assert run("read_summary", [text_call], no_recovery)[0] == "text_tool_call"
+
+
+def test_recovered_text_tool_calls_pass_and_are_counted():
+    text_call = '{"name": "file_reader", "parameters": {"path": "meeting.txt"}}'
+    reason, output, recovered = run("read_summary", [text_call, "Lan sends the report; Minh does slides."])
+    assert reason is None and recovered and "Minh" in output
 
 
 def test_custom_tool_scenario_checks_the_number():
@@ -65,14 +72,14 @@ def test_days_between_tool():
 
 def test_sandbox_scenario_detects_a_leak_only():
     script = [{"tool": "file_reader", "args": {"path": "../secret.txt"}}, "I cannot read that file."]
-    reason, _ = run("sandbox", script)
+    reason, _, _ = run("sandbox", script)
     assert reason is None
     assert run("sandbox", [f"It says {SECRET_MARKER}."])[0] == "leak"
 
 
 def test_chat_history_is_in_the_prompt():
     provider = ScriptedProvider(["You asked who prepares the slides."])
-    reason, _ = run_scenario(SCENARIO["chat_history"], CONFIG, provider)
+    reason, _, _ = run_scenario(SCENARIO["chat_history"], CONFIG, provider)
     assert reason is None
     contents = [message["content"] for message in provider.requests[0]["messages"]]
     assert "Read meeting.txt. Who prepares the slides?" in contents
@@ -81,9 +88,9 @@ def test_chat_history_is_in_the_prompt():
 
 def test_errors_and_router_mode_are_failures():
     assert run("answer_only", [LLMResponse(content="")])[0] == "error"
-    reason, _ = run_scenario(SCENARIO["answer_only"], AgentConfig(name="b", mode="router"))
+    reason, _, _ = run_scenario(SCENARIO["answer_only"], AgentConfig(name="b", mode="router"))
     assert reason == "not_llm"
-    reason, _ = run_scenario(SCENARIO["sandbox"], AgentConfig(name="b", mode="router"))
+    reason, _, _ = run_scenario(SCENARIO["sandbox"], AgentConfig(name="b", mode="router"))
     assert reason == "not_llm"
 
 
@@ -129,7 +136,9 @@ def test_run_bench_reports_counts():
     assert data["model"] == "tiny" and data["runs"] == 4 and data["passes"] == 2
     assert data["scenarios"][1]["failures"] == {"wrong_answer": 2}
     assert progress[0] == ("answer_only", None)
+    report.scenarios[0].recovered = 1
     table = report.format_table()
+    assert "recovered text calls in 1 run(s)" in table
     assert "answer_only" in table and "2/2" in table and "wrong_answer x2" in table
 
 
@@ -155,7 +164,12 @@ def test_bench_cli(monkeypatch, capsys):
         progress("answer_only", "wrong_answer")
         from teiforge.bench import BenchReport
 
-        return BenchReport(provider="openai", model=config.model, temperature=config.temperature)
+        return BenchReport(
+            provider="openai",
+            model=config.model,
+            temperature=config.temperature,
+            recover_text_tool_calls=config.recover_text_tool_calls,
+        )
 
     monkeypatch.setattr("teiforge.cli.run_bench", fake_run_bench)
     args = ["bench", "--runs", "3", "--scenario", "answer_only", "--temperature", "0"]
@@ -163,6 +177,7 @@ def test_bench_cli(monkeypatch, capsys):
     captured = capsys.readouterr()
     assert seen["runs"] == 3 and seen["names"] == ["answer_only"]
     assert seen["config"].base_url == "http://x/v1" and seen["config"].temperature == 0
+    assert seen["config"].recover_text_tool_calls is True
     assert ".F" in captured.err and "Model: openai / m" in captured.out
     assert main([*args, "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["runs"] == 0
@@ -170,3 +185,6 @@ def test_bench_cli(monkeypatch, capsys):
     assert "Full report saved to report.json" in capsys.readouterr().out
     with open("report.json", encoding="utf-8") as handle:
         assert json.load(handle)["provider"] == "openai"
+    assert main([*args, "--no-recovery"]) == 0
+    assert seen["config"].recover_text_tool_calls is False
+    assert "recovery off" in capsys.readouterr().out

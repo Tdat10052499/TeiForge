@@ -128,7 +128,10 @@ teiforge run "Read ../secret.txt" --agent files --workspace notes --no-llm
 ```
 
 **Tip for local models:** small models (around 8B parameters) are not always reliable: they may
-misread a tool result or write a tool call as plain text instead of calling the tool. A
+misread a tool result or write a tool call as plain text instead of calling the tool. TeiForge
+recognises a reply that is only a tool call written as text (JSON, a code block or `<tool_call>`
+tags naming one of the agent's tools) and runs it; the `tool_call` event then has
+`"recovered": true`. Turn this off with `AgentConfig(..., recover_text_tool_calls=False)`. A
 temperature of `0` makes them more consistent; if an answer looks wrong, run it again or try a
 larger model. In Python, pass
 `AgentConfig(..., temperature=0)`; for the CLI, put it in a config file (see [CLI](#cli)).
@@ -214,6 +217,7 @@ teiforge bench --runs 10                 # all scenarios, 10 runs each
 teiforge bench --list                    # scenarios and failure reasons
 teiforge bench --scenario custom_tool --temperature 0 --json
 teiforge bench --runs 10 --out bench.json   # table on screen, full report with answers in a file
+teiforge bench --runs 10 --no-recovery     # the same without recovering text tool calls
 ```
 
 ```text

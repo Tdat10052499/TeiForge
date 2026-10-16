@@ -257,6 +257,46 @@ def test_llm_loop_calls_tools_and_returns_final_answer(tmp_path):
     assert provider.requests[0]["tools"] == ["web_search", "file_reader"]
 
 
+TEXT_CALL = '{"name": "file_reader", "parameters": {"path": "notes.txt"}}'
+
+
+def test_llm_loop_recovers_tool_calls_written_as_text(tmp_path):
+    (tmp_path / "notes.txt").write_text("TeiForge notes", encoding="utf-8")
+    agent, provider = make_llm_agent(tmp_path, [TEXT_CALL, "The notes mention TeiForge."])
+
+    result = agent.run_detailed("What do my notes say?")
+
+    assert result.ok and result.steps == 2 and result.output == "The notes mention TeiForge."
+    call = result.tool_calls()[0]
+    assert call.data["name"] == "file_reader" and call.data["recovered"] is True
+    assert call.data["arguments"] == {"path": "notes.txt"}
+    tool_result = next(e for e in result.events if e.type == "tool_result")
+    assert tool_result.data["ok"] and "TeiForge notes" in tool_result.data["output"]
+    assistant, tool_message = provider.requests[1]["messages"][-2:]
+    assert assistant["role"] == "assistant" and assistant["content"] == ""
+    assert assistant["tool_calls"][0].id == "text_call_1"
+    assert tool_message["tool_call_id"] == "text_call_1"
+
+
+def test_llm_loop_text_recovery_can_be_turned_off(tmp_path):
+    agent, _ = make_llm_agent(tmp_path, [TEXT_CALL], recover_text_tool_calls=False)
+    result = agent.run_detailed("What do my notes say?")
+    assert result.ok and result.output == TEXT_CALL and not result.tool_calls()
+
+
+def test_llm_loop_does_not_run_tools_mentioned_in_prose(tmp_path):
+    answer = "I used file_reader on notes.txt and it says hello."
+    agent, _ = make_llm_agent(tmp_path, [answer])
+    result = agent.run_detailed("What do my notes say?")
+    assert result.output == answer and not result.tool_calls()
+
+
+def test_normal_tool_calls_are_not_marked_recovered(tmp_path):
+    (tmp_path / "notes.txt").write_text("x", encoding="utf-8")
+    agent, _ = make_llm_agent(tmp_path, [{"tool": "file_reader", "args": {"path": "notes.txt"}}, "done"])
+    assert "recovered" not in agent.run_detailed("read").tool_calls()[0].data
+
+
 def test_llm_loop_reports_tool_errors_to_the_model(tmp_path):
     agent, provider = make_llm_agent(
         tmp_path,

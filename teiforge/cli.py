@@ -243,7 +243,9 @@ def cmd_bench(args: argparse.Namespace) -> int:
             print(f"  {reason:<19} {meaning}")
         return 0
     selected = [item for item in SCENARIOS if not args.scenario or item.name in args.scenario]
-    config = AgentConfig(name="bench-agent", temperature=args.temperature)
+    config = AgentConfig(
+        name="bench-agent", temperature=args.temperature, recover_text_tool_calls=not args.no_recovery
+    )
     if args.provider:
         config.provider = args.provider
     if args.model:
@@ -323,6 +325,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     bench.add_argument("--temperature", type=float, default=0.7, help="Model temperature (default: 0.7).")
     bench.add_argument("--json", action="store_true", help="Print the full report, with answers, as JSON.")
+    bench.add_argument(
+        "--no-recovery",
+        action="store_true",
+        help="Do not run tool calls that the model wrote as text (to compare with the default).",
+    )
     bench.add_argument("--out", default=None, help="Also save the full JSON report to this file.")
     bench.add_argument("--list", action="store_true", help="List the scenarios and failure reasons.")
     bench.add_argument("--provider", choices=["openai", "anthropic"], default=None)
