@@ -39,6 +39,19 @@ Notable changes to TeiForge are documented here. The format follows
   answer. Controlled by `AgentConfig.self_check` (default `True`) and `teiforge bench --no-self-check`.
   The check is a phrase match, so an answer that quotes a failure from the data itself can trigger
   one extra model call.
+- The `teiforge bench` JSON report (`--json`, `--out`) now lists, for every run, its failure
+  reason (`reasons`) and the tools it called with their arguments and whether they succeeded
+  (`tool_calls`). `teiforge.bench.trace_tool_calls()` builds that list from a `RunResult`.
+
+### Changed
+
+- The default system prompt now tells the model to call a tool only when the task needs it, to
+  answer the user's latest message, and to give the answer itself after using tools instead of
+  describing the tool calls. A benchmark of `llama3.1` on Ollama showed these three mistakes in 39
+  of 50 failed runs. Agents with their own `system_prompt` are not affected.
+- The `chat_history` bench scenario also passes when the answer recalls the earlier request
+  (for example "You asked me to read meeting.txt ..."), not only when it contains "who" and
+  "slide". Results for this scenario are not directly comparable with earlier reports.
 
 ## 0.3.1 - 2026-10-14
 
