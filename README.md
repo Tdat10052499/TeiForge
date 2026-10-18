@@ -255,7 +255,7 @@ confidence interval and the reason for every failure:
 teiforge bench --runs 10                 # all scenarios, 10 runs each
 teiforge bench --list                    # scenarios and failure reasons
 teiforge bench --scenario custom_tool --temperature 0 --json
-teiforge bench --runs 10 --out bench.json   # table on screen, full report with answers in a file
+teiforge bench --runs 10 --out bench.json   # table on screen; the file adds every answer and tool call
 teiforge bench --runs 10 --no-recovery --no-self-check   # the same without the small-model aids
 ```
 
@@ -268,7 +268,9 @@ read_summary       8/10      49%-94%  text_tool_call x2
 
 Every run uses a fresh temporary workspace and calls the model for real, so it takes a few minutes
 on a laptop (and costs money with a paid API). Compare results only between runs that use the same
-model, provider and temperature. The table above is an illustration, not a measurement.
+model, provider and temperature. The bench uses temperature 0.7 by default to show how much
+answers vary; the terminal UI uses 0, so add `--temperature 0` to measure what it sees. The
+table above is an illustration, not a measurement.
 
 ### CLI
 
