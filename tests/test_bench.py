@@ -175,6 +175,9 @@ def test_run_bench_reports_counts():
     table = report.format_table()
     assert "recovered text calls in 1 run(s)" in table and "self-check in 2 run(s)" in table
     assert "answer_only" in table and "2/2" in table and "wrong_answer x2" in table
+    assert "temperature 0" not in table.split("\n", 1)[1]
+    report.temperature = 0
+    assert "runs are not independent" in report.format_table()
 
 
 def test_run_bench_needs_a_provider_and_runs():

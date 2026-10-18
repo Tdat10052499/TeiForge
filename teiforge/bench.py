@@ -323,6 +323,11 @@ class BenchReport:
         lines.append(f"{'total':<14} {f'{self.passes}/{self.runs}':>8} {f'{low:.0%}-{high:.0%}':>12}")
         lines.append("")
         lines.append("The interval is wide with few runs; use --runs 10 or more before comparing results.")
+        if self.temperature == 0:
+            lines.append(
+                "At temperature 0 most models repeat the same answer every run, so the runs are not "
+                "independent and the interval overstates how certain the result is."
+            )
         return "\n".join(lines)
 
 
