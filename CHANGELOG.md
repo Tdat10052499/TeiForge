@@ -6,6 +6,14 @@ Notable changes to TeiForge are documented here. The format follows
 
 ## Unreleased
 
+### Fixed
+
+- `file_writer` overwrote an existing file when a model sent `"overwrite": "false"` as a string,
+  because any non-empty string is true in Python. Boolean tool arguments now accept `true`/`false`,
+  the strings `"true"`, `"false"`, `"1"`, `"0"`, `"yes"`, `"no"` (any case) and `0`/`1`; anything
+  else is refused with a tool error. Found with `teiforge bench` on llama3.1, which sends
+  `"overwrite": "True"`.
+
 ## 0.3.1 - 2026-10-14
 
 Fixes found by installing 0.3.0 from PyPI and following the README on Windows with Ollama.
