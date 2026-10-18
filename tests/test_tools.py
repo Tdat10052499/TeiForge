@@ -302,6 +302,33 @@ def test_file_writer_and_reader_round_trip(tmp_path):
     assert read.output.endswith("  keep: spaces  ")
 
 
+@pytest.mark.parametrize("flag", ["false", "False", "0", "no"])
+def test_file_writer_treats_a_false_string_as_false(tmp_path, flag):
+    # Regression: small models send booleans as strings, and the string "false" is truthy,
+    # so overwrite="false" replaced an existing file.
+    (tmp_path / "a.txt").write_text("old", encoding="utf-8")
+    writer = make_file_writer(Workspace(tmp_path))
+    result = writer.run({"path": "a.txt", "content": "new", "overwrite": flag})
+    assert not result.ok and "already exists" in result.error
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "old"
+
+
+@pytest.mark.parametrize("flag", ["true", "True", "1", "yes", 1])
+def test_file_writer_accepts_a_true_string(tmp_path, flag):
+    (tmp_path / "a.txt").write_text("old", encoding="utf-8")
+    writer = make_file_writer(Workspace(tmp_path))
+    assert writer.run({"path": "a.txt", "content": "new", "overwrite": flag}).ok
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "new"
+
+
+def test_boolean_arguments_that_are_not_booleans_are_rejected(tmp_path):
+    writer = make_file_writer(Workspace(tmp_path))
+    for flag in ("maybe", 2, [True]):
+        result = writer.run({"path": "b.txt", "content": "x", "overwrite": flag})
+        assert not result.ok and "overwrite" in result.error
+    assert not (tmp_path / "b.txt").exists()
+
+
 def test_file_writer_does_not_overwrite_without_permission(tmp_path):
     (tmp_path / "a.txt").write_text("original", encoding="utf-8")
     writer = make_file_writer(Workspace(tmp_path))

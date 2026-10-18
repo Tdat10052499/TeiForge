@@ -60,6 +60,28 @@ _LEGACY_PARAMETERS: JSONSchema = {
 }
 
 
+_TRUE_STRINGS = frozenset({"true", "1", "yes"})
+_FALSE_STRINGS = frozenset({"false", "0", "no", ""})
+
+
+def _as_bool(name: str, value: Any) -> bool:
+    """Return ``value`` as a bool, accepting the strings and 0/1 that small models send.
+
+    A plain ``bool(value)`` would treat the string ``"false"`` as true.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in _TRUE_STRINGS:
+            return True
+        if text in _FALSE_STRINGS:
+            return False
+    raise ToolError(f"Argument '{name}' must be true or false, got {value!r}.")
+
+
 class Tool:
     """A named, described callable that an agent can use.
 
@@ -140,6 +162,9 @@ class Tool:
         missing = [name for name in required if name not in call_args]
         if missing:
             raise ToolError(f"Tool '{self.name}' is missing argument(s): {', '.join(missing)}.")
+        for name, value in call_args.items():
+            if properties.get(name, {}).get("type") == "boolean":
+                call_args[name] = _as_bool(name, value)
         return call_args
 
     # -- schemas -----------------------------------------------------------------
