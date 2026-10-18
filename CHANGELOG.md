@@ -45,13 +45,11 @@ Notable changes to TeiForge are documented here. The format follows
 
 ### Changed
 
-- The default system prompt now tells the model to call a tool only when the task needs it, to
-  answer the user's latest message, and to give the answer itself after using tools instead of
-  describing the tool calls. A benchmark of `llama3.1` on Ollama showed these three mistakes in 39
-  of 50 failed runs. Agents with their own `system_prompt` are not affected.
 - The `chat_history` bench scenario also passes when the answer recalls the earlier request
   (for example "You asked me to read meeting.txt ..."), not only when it contains "who" and
   "slide". Results for this scenario are not directly comparable with earlier reports.
+- `teiforge bench --temperature 0` warns that the runs are not independent, so its confidence
+  interval overstates how certain the result is.
 
 ## 0.3.1 - 2026-10-14
 
